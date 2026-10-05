@@ -69,25 +69,6 @@ export function sceneZone(parts: SceneParts, offset: number): Zone {
   return "location";
 }
 
-/** Tab through the three parts of a slug. `leave` means the time of day is done. */
-export function tabScene(visible: string, offset: number): { visible: string; offset: number; leave: boolean } {
-  const parts = sceneParts(visible);
-  const zone = sceneZone(parts, offset);
-  if (zone === "time") return { visible, offset, leave: true };
-  if (zone === "intro") {
-    const gap = visible.slice(parts.introEnd, parts.locationStart);
-    const next = parts.intro + (gap.startsWith(" ") ? gap : " ") + visible.slice(parts.locationStart);
-    const again = sceneParts(next);
-    const cursor = again.location ? again.locationEnd : again.locationStart;
-    return { visible: next, offset: cursor, leave: false };
-  }
-  const hasTime = Boolean(parts.time) || /\s+-\s+/.test(visible.slice(parts.introEnd));
-  const next = hasTime ? visible : `${visible.slice(0, parts.locationEnd)} - ${parts.time}`;
-  const again = sceneParts(next);
-  const cursor = again.time ? again.timeStart + again.time.length : again.timeStart;
-  return { visible: next, offset: cursor, leave: false };
-}
-
 export function cueName(visible: string): string {
   return visible.replace(/\([^)]*\)/g, "").trim();
 }

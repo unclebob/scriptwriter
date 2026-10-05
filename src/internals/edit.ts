@@ -90,11 +90,9 @@ export function insertBefore(doc: string, cursor: number): Edit {
   const index = lineIndex(doc, element.from);
   lines.splice(index, 0, renderLine(element.type, "", false));
   const newIndex = normalizeBlanks(lines, index, element.type);
-  const nextIndex = nextContent(lines, newIndex + 1);
-  if (nextIndex >= 0) {
-    const kind = elementAt(join(lines), lineStart(lines, nextIndex));
-    if (kind) normalizeBlanks(lines, nextIndex, kind.type);
-  }
+  const nextIndex = newIndex + 1;
+  const kind = elementAt(join(lines), lineStart(lines, nextIndex));
+  if (kind) normalizeBlanks(lines, nextIndex, kind.type);
   return { doc: join(lines), cursor: typingCursor(lines, newIndex) };
 }
 
@@ -104,7 +102,7 @@ export function setElement(doc: string, cursor: number, type: ElementType): Edit
     if (place(doc, cursor).line === "" && parseScript(doc).length > 0) return { doc, cursor };
     const lines = texts(doc);
     const here = place(doc, cursor);
-    const index = lineIndexAt(doc, here.from);
+    const index = lineIndex(doc, here.from);
     lines[index] = renderLine(type, "", false);
     const moved = normalizeBlanks(lines, index, type);
     return { doc: join(lines), cursor: typingCursor(lines, moved) };
@@ -440,13 +438,6 @@ function elementBeside(doc: string, cursor: number): ScriptElement | null {
   return null;
 }
 
-function nextContent(lines: string[], from: number): number {
-  for (let index = from; index < lines.length; index += 1) {
-    if (lines[index] !== "") return index;
-  }
-  return -1;
-}
-
 function following(doc: string, element: ScriptElement): ScriptElement | null {
   const elements = parseScript(doc);
   const index = elements.findIndex((item) => item.from === element.from);
@@ -499,11 +490,6 @@ function texts(doc: string): string[] {
 
 function lineIndex(doc: string, from: number): number {
   return scriptLines(doc).findIndex((line) => line.from === from);
-}
-
-function lineIndexAt(doc: string, from: number): number {
-  const index = lineIndex(doc, from);
-  return index < 0 ? 0 : index;
 }
 
 function lineStart(lines: string[], index: number): number {

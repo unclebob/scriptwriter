@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completions, otherSpeaker, sceneParts, tabScene } from "./smarttype";
+import { completions, otherSpeaker, sceneParts } from "./smarttype";
 
 const talk = `@ALICE
 Hi.
@@ -19,15 +19,6 @@ describe("smart type", () => {
       timeStart: 15,
     });
     expect(sceneParts("INT.")).toMatchObject({ location: "", time: "", locationStart: 4 });
-  });
-
-  it("tabs from the intro to the location to the time", () => {
-    expect(tabScene("INT.", 4)).toMatchObject({ visible: "INT. ", offset: 5, leave: false });
-    expect(tabScene("INT. KIT", 8)).toMatchObject({ visible: "INT. KIT - ", leave: false });
-    const filled = tabScene("INT. KITCHEN - DAY", 2);
-    expect(filled.leave).toBe(false);
-    expect(filled.visible.slice(filled.offset - "KITCHEN".length, filled.offset)).toBe("KITCHEN");
-    expect(tabScene("INT. KITCHEN - DAY", "INT. KITCHEN - DAY".length).leave).toBe(true);
   });
 
   it("offers the other speaker first", () => {

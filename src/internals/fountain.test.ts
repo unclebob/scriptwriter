@@ -5,7 +5,6 @@ import {
   isBlankScript,
   parseScript,
   renderLine,
-  sceneHeadings,
 } from "./fountain";
 
 const sample = `INT. KITCHEN - DAY
@@ -105,8 +104,7 @@ describe("elements", () => {
     expect(renderLine("parenthetical", "(quietly")).toBe("(quietly)");
   });
 
-  it("lists scene headings and ignores an empty script", () => {
-    expect(sceneHeadings(sample).map((scene) => scene.text)).toEqual(["INT. KITCHEN - DAY", "EXT. PORCH - DAY"]);
+  it("ignores an empty script", () => {
     expect(isBlankScript("")).toBe(true);
     expect(isBlankScript(".")).toBe(true);
     expect(isBlankScript(sample)).toBe(false);

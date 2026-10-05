@@ -150,12 +150,6 @@ export function elementAt(doc: string, cursor: number): ScriptElement | null {
   return null;
 }
 
-export function sceneHeadings(doc: string): { text: string; from: number }[] {
-  return parseScript(doc)
-    .filter((element) => element.type === "scene")
-    .map((element) => ({ text: element.text || "Scene", from: element.from }));
-}
-
 /** An empty editor, or a file that is only an empty scene heading. */
 export function isBlankScript(doc: string): boolean {
   const elements = parseScript(doc);

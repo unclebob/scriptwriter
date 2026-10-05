@@ -154,7 +154,7 @@ function pdfDocument(contents: string[]): string {
     objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
   let body = "%PDF-1.4\n";
-  const offsets: number[] = [0];
+  const offsets: number[] = [];
   objects.forEach((object, index) => {
     offsets.push(body.length);
     body += `${index + 1} 0 obj\n${object}\nendobj\n`;
@@ -162,7 +162,7 @@ function pdfDocument(contents: string[]): string {
   const xref = body.length;
   body += `xref\n0 ${objects.length + 1}\n`;
   body += "0000000000 65535 f \n";
-  for (let i = 1; i < offsets.length; i += 1) body += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
   body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return body;
 }
