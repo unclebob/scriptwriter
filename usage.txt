@@ -1,0 +1,10 @@
+Usage:
+  sw <directory>
+  sw --help
+
+Build Scriptwriter and open the script in <directory>.
+The directory must already exist. A folder with no script yet becomes an empty script.
+
+scriptwriter <directory> opens that script without rebuilding.
+scriptwriter --help prints this usage.
+With no directory, scriptwriter opens spec-script/.

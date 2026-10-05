@@ -1,0 +1,678 @@
+{
+  "title": "The Kettle",
+  "credit": "Written by",
+  "author": "A. Writer",
+  "draft": "October 2026",
+  "contact": "A. Writer\nwriter@example.com",
+  "elements": [
+    {
+      "type": "act",
+      "text": "ACT I"
+    },
+    {
+      "type": "scene",
+      "text": "KITCHEN",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Wow.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "INT. KITCHEN - DA",
+      "blanksBefore": 1
+    },
+    {
+      "type": "action",
+      "text": "Bob fills the kettle and sets it on the stove.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "character",
+      "text": "BOB",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Tea?  With sugar?",
+      "blanksBefore": 0
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "parenthetical",
+      "text": "(turning)",
+      "blanksBefore": 0
+    },
+    {
+      "type": "dialogue",
+      "text": "Please.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "shot",
+      "text": "CLOSE ON THE KETTLE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "parenthetical",
+      "text": "()",
+      "blanksBefore": 0
+    },
+    {
+      "type": "action",
+      "text": "water starts to move.",
+      "blanksBefore": 1
+    },
+    {
+      "type": "transition",
+      "text": "FADE OUT.",
+      "blanksBefore": 1
+    },
+    {
+      "type": "scene",
+      "text": "OFFICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "action",
+      "text": "sdfsx",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "BOB",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "This is fun.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "OUTSIDE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Yes, it is.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "CAR",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "BOB",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Well, if you say so, but I’m not that sure.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FAMILY ROOM",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "BOB",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "I’m sure.  You’re just a fraidy cat. ",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "act",
+      "text": "ACT II",
+      "blanksBefore": 1
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "scene",
+      "text": "FRONT YARD",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "ALICE",
+      "blanksBefore": 1
+    },
+    {
+      "type": "dialogue",
+      "text": "Don’t say mean things to him.  He’s always been nice to me.",
+      "blanksBefore": 0
+    },
+    {
+      "type": "transition",
+      "text": "FADE OUT.",
+      "blanksBefore": 1
+    },
+    {
+      "type": "action",
+      "text": "",
+      "blanksBefore": 1
+    },
+    {
+      "type": "character",
+      "text": "",
+      "blanksBefore": 1
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scriptwriter</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <nav class="menubar">
+          <div class="menu">
+            <button id="btn-file" type="button" aria-haspopup="true" aria-expanded="false">File</button>
+            <div id="menu-file" class="menu-list" hidden>
+              <button type="button" data-action="open">Open Script<kbd>⌘O</kbd></button>
+              <button type="button" data-action="pdf">Export PDF<kbd>⌘⇧E</kbd></button>
+              <button type="button" data-action="scenes">Export Scenes<kbd>⌘⇧L</kbd></button>
+            </div>
+          </div>
+          <div class="menu">
+            <button id="btn-edit" type="button" aria-haspopup="true" aria-expanded="false">Edit</button>
+            <div id="menu-edit" class="menu-list" hidden>
+              <button type="button" data-action="find">Find<kbd>⌘F</kbd></button>
+            </div>
+          </div>
+        </nav>
+        <input id="script-title" class="script-title" aria-label="Title" spellcheck="false" />
+      </header>
+      <div id="warnings" class="warnings" hidden></div>
+      <div class="workspace">
+        <aside>
+          <label>Credit <input id="field-credit" type="text" spellcheck="false" /></label>
+          <label>Author <input id="field-author" type="text" spellcheck="false" /></label>
+          <label>Draft <input id="field-draft" type="text" spellcheck="false" /></label>
+          <label>Contact <textarea id="field-contact" rows="4" spellcheck="false"></textarea></label>
+          <h2>Scenes</h2>
+          <nav id="scenes" aria-label="Scenes"></nav>
+        </aside>
+        <main id="stage" class="stage">
+          <div class="page">
+            <div id="margin-label" class="margin-label" hidden></div>
+            <div id="editor-host"></div>
+          </div>
+        </main>
+      </div>
+      <footer class="status">
+        <span id="element-name"></span>
+        <span id="page-name"></span>
+      </footer>
+    </div>
+    <div id="menu-format" class="menu-list" hidden></div>
+    <script type="module" src="/src/main/main.ts"></script>
+  </body>
+</html>

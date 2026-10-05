@@ -1,0 +1,253 @@
+:root {
+  color: #222;
+  background: #e6e6e6;
+  font-family: system-ui, sans-serif;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, .app {
+  margin: 0;
+  height: 100%;
+}
+
+button, input, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid #ccc;
+  background: #eee;
+}
+
+.menubar {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.menu { position: relative; }
+
+.menubar > .menu > button {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.menubar > .menu > button:hover,
+.menubar > .menu > button[aria-expanded="true"] {
+  background: #e0e0e0;
+  border-color: #ccc;
+}
+
+.menu-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  min-width: 16rem;
+  margin-top: 0.15rem;
+  padding: 0.25rem 0;
+  background: #f7f7f7;
+  border: 1px solid #ccc;
+}
+
+.menu-list button {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  padding: 0.28rem 0.7rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-list button:hover,
+.menu-list button.is-current { background: #e4e4e4; }
+
+.menu-list kbd {
+  color: #555;
+  font-family: inherit;
+}
+
+.script-title {
+  flex: 1;
+  min-width: 8rem;
+  padding: 0.15rem 0.3rem;
+  border: none;
+  background: transparent;
+  font-size: 1.05rem;
+}
+
+.script-title:focus { outline: 1px solid #888; }
+
+.warnings {
+  padding: 0.35rem 0.7rem;
+  background: #fff6d8;
+  border-bottom: 1px solid #e0d3a4;
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+aside {
+  width: 16rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border-right: 1px solid #ccc;
+  background: #f3f3f3;
+}
+
+aside label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+
+aside input,
+aside textarea {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #ccc;
+  background: white;
+}
+
+aside h2 {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.scene {
+  display: block;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scene:hover { background: #e4e4e4; }
+
+.scene[aria-current="true"] { background: #dedede; }
+
+.outline-act { font-weight: 600; }
+
+.scene-numbers {
+  user-select: none;
+}
+
+.scene-number {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.scene-number-left { right: calc(100% + 0.2in); }
+
+.scene-number-right { left: calc(100% + 0.2in); }
+
+.insert-above {
+  margin: 0 0.08in 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font-family: system-ui, sans-serif;
+  font-size: 9pt;
+  line-height: 1;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.insert-above:hover { color: #222; }
+
+.stage {
+  flex: 1;
+  overflow: auto;
+  padding: 1.5rem 1rem 2rem;
+  background: #d9d9d9;
+}
+
+.page {
+  position: relative;
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto;
+  padding: 1in 1in 1in 1.5in;
+  background: white;
+  outline: 1px solid #bbb;
+}
+
+.margin-label {
+  position: absolute;
+  left: 0.12in;
+  z-index: 2;
+  max-width: 0.9in;
+  overflow: hidden;
+  color: #8a8a8a;
+  font-family: system-ui, sans-serif;
+  font-size: 8pt;
+  font-style: italic;
+  line-height: 12pt;
+  white-space: nowrap;
+  cursor: context-menu;
+  user-select: none;
+}
+
+.page .cm-editor,
+.page .cm-scroller {
+  height: auto;
+  max-height: none;
+}
+
+.page .cm-scroller {
+  overflow: visible;
+}
+
+.page-rule {
+  position: relative;
+  top: -0.7em;
+  height: 0;
+  margin: 0;
+  border-top: 1px solid #b5b5b5;
+  color: #777;
+  font-family: system-ui, sans-serif;
+  font-size: 8pt;
+  line-height: 1;
+  text-align: right;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0.7rem;
+  border-top: 1px solid #ccc;
+  background: #eee;
+  font-size: 0.85rem;
+}

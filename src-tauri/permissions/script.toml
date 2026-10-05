@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "script-access"
+description = "Read and write the open script folder."
+commands.allow = [
+  "read_text",
+  "write_text",
+  "startup_script_path",
+]
