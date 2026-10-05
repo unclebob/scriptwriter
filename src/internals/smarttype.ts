@@ -120,16 +120,31 @@ export function locations(doc: string): string[] {
 
 /** The other person in the current scene, once two characters have spoken. */
 export function otherSpeaker(doc: string, before: number): string | null {
+  return earlierName(namesBefore(doc, before));
+}
+
+function namesBefore(doc: string, before: number): string[] {
   const names: string[] = [];
   for (const element of parseScript(doc)) {
     if (element.from >= before) break;
     if (element.type === "scene" || element.type === "act") names.length = 0;
-    if (element.type !== "character") continue;
-    const name = cueName(element.text);
-    if (name) names.push(name);
+    pushCue(names, element);
   }
+  return names;
+}
+
+function pushCue(names: string[], element: ScriptElement) {
+  if (element.type !== "character") return;
+  const name = cueName(element.text);
+  if (name) names.push(name);
+}
+
+function earlierName(names: string[]): string | null {
   if (names.length < 2) return null;
-  const last = names[names.length - 1];
+  return differentName(names, names[names.length - 1]);
+}
+
+function differentName(names: string[], last: string): string | null {
   for (let i = names.length - 2; i >= 0; i -= 1) {
     if (names[i] !== last) return names[i];
   }

@@ -225,10 +225,57 @@ describe("editing", () => {
     expect(insertElements(doc, 0, 0, "Just one line.")).toBeNull();
   });
 
+  it("enters the speech that already follows a character", () => {
+    const dialogue = "@ALICE\nHello.";
+    const intoDialogue = enter(dialogue, "@ALICE".length);
+    expect(intoDialogue).toEqual({ doc: dialogue, cursor: dialogue.indexOf("Hello.") });
+
+    const parenthetical = "@ALICE\n(turning)";
+    const intoParen = enter(parenthetical, "@ALICE".length);
+    expect(intoParen).toEqual({ doc: parenthetical, cursor: parenthetical.indexOf(")") });
+  });
+
   it("changes the element the cursor is in", () => {
     const shot = setElement("The door.", 3, "shot");
     expect(shot.doc).toBe("~THE DOOR.");
     const action = shiftTab(shot.doc, shot.cursor);
     expect(parseScript(action.doc)[0].type).toBe("transition");
+  });
+
+  it("turns a leading blank line into a scene heading on enter", () => {
+    expect(enter("\n", 0)).toEqual({ doc: ".", cursor: 1 });
+  });
+
+  it("splits an action at its first character and keeps the following action", () => {
+    const doc = "INT. KITCHEN - DAY\n\nBob walks.\n\nHe sits.";
+    const next = enter(doc, doc.indexOf("Bob"));
+    expect(next.doc).toBe("INT. KITCHEN - DAY\n\n\nBob walks.\n\nHe sits.");
+    expect(next.cursor).toBe(next.doc.indexOf("Bob"));
+  });
+
+  it("drops the space when enter splits an action after a word", () => {
+    const doc = "Bob walks.";
+    const next = enter(doc, doc.indexOf("walks"));
+    expect(next.doc).toBe("Bob\n\nwalks.");
+    expect(next.cursor).toBe(next.doc.indexOf("walks"));
+  });
+
+  it("turns a leading blank line into an action on tab", () => {
+    expect(tab("\n", 0)).toEqual({ doc: "!", cursor: 1 });
+  });
+
+  it("leaves a leading blank line alone on shift-tab", () => {
+    expect(shiftTab("\n", 0)).toEqual({ doc: "\n", cursor: 0 });
+  });
+
+  it("removes the extra blank lines when an action becomes a character", () => {
+    const doc = "INT. KITCHEN - DAY\n\n\n\nBob waits.";
+    const next = tab(doc, doc.indexOf("Bob"));
+    expect(next.doc).toBe("INT. KITCHEN - DAY\n\n@BOB WAITS.");
+    expect(next.doc[next.cursor]).toBe("B");
+  });
+
+  it("starts an empty script as the requested element", () => {
+    expect(setElement("", 0, "action")).toEqual({ doc: "!", cursor: 1 });
   });
 });

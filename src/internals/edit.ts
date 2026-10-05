@@ -17,38 +17,45 @@ import { docFromElements, elementsFromDoc } from "./script";
 
 export type Edit = { doc: string; cursor: number };
 
+const OPENS_NEXT = new Set<ElementType>(["scene", "character", "parenthetical", "transition", "act"]);
+
 export function enter(doc: string, cursor: number): Edit {
   const here = place(doc, cursor);
-  if (here.line === "") {
-    const prev = previousElement(doc, here.from);
-    if (!prev) return setElement(doc, cursor, "scene");
-    return enter(doc, prev.to);
-  }
+  if (here.line === "") return enterBlank(doc, cursor, here.from);
+  return splitElement(doc, cursor, here);
+}
+
+function enterBlank(doc: string, cursor: number, from: number): Edit {
+  const prev = previousElement(doc, from);
+  if (!prev) return setElement(doc, cursor, "scene");
+  return enter(doc, prev.to);
+}
+
+function splitElement(doc: string, cursor: number, here: Here): Edit {
   const element = elementAt(doc, cursor);
   if (!element) return setElement(doc, cursor, "action");
   const next = returnNext(element.type);
-  if (
-    element.type === "scene" ||
-    element.type === "character" ||
-    element.type === "parenthetical" ||
-    element.type === "transition" ||
-    element.type === "act"
-  ) {
-    return insertAfter(doc, element, next, "");
-  }
-  const visibleAt = Math.max(0, here.offset - element.marker);
-  let left = element.text.slice(0, visibleAt);
-  let right = element.text.slice(visibleAt);
-  if (right.startsWith(" ")) right = right.slice(1);
-  else if (left.endsWith(" ")) left = left.slice(0, -1);
+  if (OPENS_NEXT.has(element.type)) return insertAfter(doc, element, next, "");
+  return breakLine(doc, element, here, next);
+}
+
+function breakLine(doc: string, element: ScriptElement, here: Here, next: ElementType): Edit {
+  const at = Math.max(0, here.offset - element.marker);
+  const parts = trimBreak(element.text.slice(0, at), element.text.slice(at));
   const lines = texts(doc);
   const index = lineIndex(doc, element.from);
-  if (left === "") {
+  if (parts.left === "") {
     lines.splice(index, 1);
-    return placeLine(lines, index - 1, next, right);
+    return placeLine(lines, index - 1, next, parts.right);
   }
-  lines[index] = renderLine(element.type, left, false, underSpeech(lines, index));
-  return placeLine(lines, index, next, right);
+  lines[index] = renderLine(element.type, parts.left, false, underSpeech(lines, index));
+  return placeLine(lines, index, next, parts.right);
+}
+
+function trimBreak(left: string, right: string): { left: string; right: string } {
+  if (right.startsWith(" ")) return { left, right: right.slice(1) };
+  if (left.endsWith(" ")) return { left: left.slice(0, -1), right };
+  return { left, right };
 }
 
 export function tab(doc: string, cursor: number): Edit {
@@ -184,30 +191,48 @@ export function insertElements(doc: string, from: number, to: number, pasted: st
 function spliceBlock(doc: string, cutFrom: number, cutTo: number, block: string, lead: number): Edit {
   const before = doc.slice(0, cutFrom).replace(/\n+$/, "");
   const afterRaw = doc.slice(cutTo);
-  const newlines = afterRaw.match(/^\n*/)?.[0].length ?? 0;
+  const newlines = leadingNewlines(afterRaw);
   const after = afterRaw.slice(newlines);
   const afterLead = Math.min(1, Math.max(0, newlines - 1));
-  const parts: string[] = [];
-  if (before) parts.push(before);
-  if (block) {
-    if (parts.length > 0 && lead > 0) parts.push("");
-    parts.push(block);
-  }
-  if (after) {
-    if (parts.length > 0 && afterLead > 0) parts.push("");
-    parts.push(after);
-  }
-  const next = parts.join("\n").replace(/\n{3,}/g, "\n\n");
+  const next = joined(before, block, lead, after, afterLead);
   if (next.trim() === "") return { doc: ".", cursor: 1 };
-  let cursor: number;
-  if (block) {
-    cursor = (before ? before.length + (lead > 0 ? 2 : 1) : 0) + block.length;
-  } else if (after) {
-    cursor = before ? before.length + (afterLead > 0 ? 2 : 1) : 0;
-  } else {
-    cursor = before.length;
-  }
+  const cursor = blockCursor(before, block, lead, after, afterLead);
   return { doc: next, cursor: Math.max(0, Math.min(cursor, next.length)) };
+}
+
+function leadingNewlines(text: string): number {
+  const matched = text.match(/^\n*/);
+  return matched ? matched[0].length : 0;
+}
+
+function joined(before: string, block: string, lead: number, after: string, afterLead: number): string {
+  const parts: string[] = [];
+  pushPiece(parts, before, 0);
+  pushPiece(parts, block, lead);
+  pushPiece(parts, after, afterLead);
+  return parts.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function pushPiece(parts: string[], piece: string, lead: number) {
+  if (!piece) return;
+  if (parts.length > 0 && lead > 0) parts.push("");
+  parts.push(piece);
+}
+
+function blockCursor(before: string, block: string, lead: number, after: string, afterLead: number): number {
+  if (block) return insertedCursor(before, block, lead);
+  return removedCursor(before, after, afterLead);
+}
+
+function insertedCursor(before: string, block: string, lead: number): number {
+  if (!before) return block.length;
+  return before.length + (lead > 0 ? 2 : 1) + block.length;
+}
+
+function removedCursor(before: string, after: string, afterLead: number): number {
+  if (!after) return before.length;
+  if (!before) return 0;
+  return before.length + (afterLead > 0 ? 2 : 1);
 }
 
 /** Case, markers, parentheses, and an action line that has become a slug. */
@@ -216,32 +241,73 @@ export function afterInput(doc: string, cursor: number): Edit {
   if (here.line === "") return { doc, cursor };
   const element = elementAt(doc, here.from);
   if (!element) return { doc, cursor };
+  return normalizeLine(doc, element, here, cursor);
+}
+
+function normalizeLine(doc: string, element: ScriptElement, here: Here, cursor: number): Edit {
   const lines = texts(doc);
   const index = lineIndex(doc, element.from);
-  const nextIsText = index + 1 < lines.length && lines[index + 1] !== "";
-  let type = element.type;
-  if (type === "action" && /^(INT\.\/EXT\.|EXT\.\/INT\.|I\/E\.|INT\.|EXT\.)/i.test(element.text.trim())) {
-    type = "scene";
-  }
-  if (type === "action" && isActLabel(element.text)) type = "act";
-  const visible = element.text.replace(/\u200B/g, "");
-  const rendered = renderLine(type, visible, nextIsText, underSpeech(lines, index));
+  const rendered = renderLine(
+    promoted(element.type, element.text),
+    element.text.replace(/\u200B/g, ""),
+    followingText(lines, index),
+    underSpeech(lines, index),
+  );
   if (rendered === here.line) return { doc, cursor };
-  const seen = here.line.slice(element.marker, here.offset).replace(/\u200B/g, "").length;
   lines[index] = rendered;
+  return { doc: join(lines), cursor: lineStart(lines, index) + renderedOffset(element, here, rendered, lines, index) };
+}
+
+function followingText(lines: string[], index: number): boolean {
+  return index + 1 < lines.length && lines[index + 1] !== "";
+}
+
+function promoted(type: ElementType, text: string): ElementType {
+  if (type !== "action") return type;
+  if (/^(INT\.\/EXT\.|EXT\.\/INT\.|I\/E\.|INT\.|EXT\.)/i.test(text.trim())) return "scene";
+  if (isActLabel(text)) return "act";
+  return type;
+}
+
+function renderedOffset(element: ScriptElement, here: Here, rendered: string, lines: string[], index: number): number {
+  const seen = here.line.slice(element.marker, here.offset).replace(/\u200B/g, "").length;
   const fresh = elementAt(join(lines), lineStart(lines, index)) ?? element;
-  let offset = fresh.marker + Math.min(seen, fresh.text.length);
-  if (fresh.type === "parenthetical") offset = Math.min(Math.max(offset, 1), Math.max(1, rendered.length - 1));
-  return { doc: join(lines), cursor: lineStart(lines, index) + offset };
+  const into = fresh.marker + Math.min(seen, fresh.text.length);
+  if (fresh.type !== "parenthetical") return into;
+  return Math.min(Math.max(into, 1), Math.max(1, rendered.length - 1));
 }
 
 function insertAfter(doc: string, element: ScriptElement, type: ElementType, visible: string): Edit {
+  const reused = reusedCursor(touching(doc, element), type, visible);
+  if (reused !== null) return { doc, cursor: reused };
+  return placeLine(texts(doc), lineIndex(doc, element.from), type, visible);
+}
+
+function touching(doc: string, element: ScriptElement): ScriptElement | null {
   const next = following(doc, element);
-  const beside = next !== null && gap(doc, element.to, next.from) === 0;
-  if (visible === "" && beside && next?.type === type) return { doc, cursor: typingAt(next) };
-  if (type === "dialogue" && beside && next?.type === "parenthetical") return { doc, cursor: insideParen(next) };
-  const lines = texts(doc);
-  return placeLine(lines, lineIndex(doc, element.from), type, visible);
+  if (next && gap(doc, element.to, next.from) === 0) return next;
+  return null;
+}
+
+function reusedCursor(next: ScriptElement | null, type: ElementType, visible: string): number | null {
+  if (!next) return null;
+  if (visible !== "") return null;
+  return openCursor(next, type);
+}
+
+function openCursor(next: ScriptElement, type: ElementType): number | null {
+  if (next.type === type) return typingAt(next);
+  return parenCursor(next, type);
+}
+
+function parenCursor(next: ScriptElement, type: ElementType): number | null {
+  if (type !== "dialogue") return null;
+  return insideParenthetical(next);
+}
+
+function insideParenthetical(next: ScriptElement): number | null {
+  if (next.type !== "parenthetical") return null;
+  return insideParen(next);
 }
 
 function convertLine(doc: string, element: ScriptElement, type: ElementType, cursor?: number): Edit {
@@ -287,16 +353,31 @@ function removeElement(doc: string, element: ScriptElement): Edit {
   const lines = texts(doc);
   const index = lineIndex(doc, element.from);
   lines.splice(index, 1);
-  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  trimTrailing(lines);
   if (lines.length === 0) return { doc: ".", cursor: 1 };
+  reblankFollowing(lines, index);
+  return cursorAfterRemoval(lines, index);
+}
+
+function trimTrailing(lines: string[]) {
+  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+}
+
+function reblankFollowing(lines: string[], index: number) {
+  if (index >= lines.length || lines[index] === "") return;
+  const kind = elementAt(join(lines), lineStart(lines, index));
+  if (kind) normalizeBlanks(lines, index, kind.type);
+}
+
+function cursorAfterRemoval(lines: string[], index: number): Edit {
   const prev = previousLine(lines, Math.min(index, lines.length) - 1);
-  if (index < lines.length && lines[index] !== "") {
-    const kind = elementAt(join(lines), lineStart(lines, index));
-    if (kind) normalizeBlanks(lines, index, kind.type);
-  }
-  const doc2 = join(lines);
-  const target = elementAt(doc2, lineStart(lines, prev));
-  return { doc: doc2, cursor: target ? target.to : lineStart(lines, prev) + lines[prev].length };
+  const doc = join(lines);
+  const target = elementAt(doc, lineStart(lines, prev));
+  return { doc, cursor: target ? target.to : endOfLine(lines, prev) };
+}
+
+function endOfLine(lines: string[], index: number): number {
+  return lineStart(lines, index) + lines[index].length;
 }
 
 function placeLine(lines: string[], after: number, type: ElementType, visible: string): Edit {
@@ -373,12 +454,12 @@ function following(doc: string, element: ScriptElement): ScriptElement | null {
 }
 
 function previousElement(doc: string, before: number): ScriptElement | null {
-  let prev: ScriptElement | null = null;
-  for (const element of parseScript(doc)) {
-    if (element.from >= before) break;
-    prev = element;
-  }
-  return prev;
+  return parseScript(doc).reduce<ScriptElement | null>((prev, element) => earlierElement(prev, element, before), null);
+}
+
+function earlierElement(prev: ScriptElement | null, element: ScriptElement, before: number): ScriptElement | null {
+  if (element.from >= before) return prev;
+  return element;
 }
 
 function previousLine(lines: string[], from: number): number {
@@ -388,8 +469,13 @@ function previousLine(lines: string[], from: number): number {
 }
 
 function gap(doc: string, prevTo: number, from: number): number {
-  const newlines = doc.slice(prevTo, from).match(/\n/g);
-  return Math.max(0, (newlines?.length ?? 0) - 1);
+  return Math.max(0, newlineCount(doc.slice(prevTo, from)) - 1);
+}
+
+function newlineCount(text: string): number {
+  const matched = text.match(/\n/g);
+  if (!matched) return 0;
+  return matched.length;
 }
 
 type Here = { line: string; from: number; offset: number };

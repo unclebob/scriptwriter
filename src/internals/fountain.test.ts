@@ -83,6 +83,8 @@ describe("elements", () => {
     expect(renderLine("act", "teaser")).toBe("#TEASER");
     expect(renderLine("act", "")).toBe("#");
     expect(renderLine("action", "ACT ONE")).toBe("!ACT ONE");
+    expect(renderLine("action", "BOB!!")).toBe("!BOB!!");
+    expect(renderLine("dialogue", "Hi")).toBe("\u200BHi");
   });
 
   it("reads a plain act label and a forced act title", () => {

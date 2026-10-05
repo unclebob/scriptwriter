@@ -133,21 +133,30 @@ function readElements(value: unknown): StoredElement[] {
 
 function readElement(value: unknown, index: number): StoredElement {
   if (!isRecord(value)) throw new Error(`script.json element ${index + 1} is not an object.`);
+  const type = elementType(value, index);
+  const text = readString(value, "text", "");
+  if (text.includes("\n")) throw new Error(`script.json element ${index + 1} is more than one line.`);
+  return { type, text, ...readBlanks(value, index) };
+}
+
+function elementType(value: Record<string, unknown>, index: number): ElementType {
   const type = value.type;
   if (typeof type !== "string" || !isElementType(type)) {
     throw new Error(`script.json element ${index + 1} has an unknown type.`);
   }
-  const text = readString(value, "text", "");
-  if (text.includes("\n")) throw new Error(`script.json element ${index + 1} is more than one line.`);
-  const element: StoredElement = { type, text };
-  if ("blanksBefore" in value && value.blanksBefore !== undefined) {
-    const blanks = value.blanksBefore;
-    if (typeof blanks !== "number" || !Number.isInteger(blanks) || blanks < 0) {
-      throw new Error(`script.json element ${index + 1} has a bad blanksBefore.`);
-    }
-    element.blanksBefore = Math.min(blanks, 1);
+  return type;
+}
+
+function readBlanks(value: Record<string, unknown>, index: number): { blanksBefore?: number } {
+  if (!("blanksBefore" in value) || value.blanksBefore === undefined) return {};
+  return { blanksBefore: blankCount(value.blanksBefore, index) };
+}
+
+function blankCount(value: unknown, index: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`script.json element ${index + 1} has a bad blanksBefore.`);
   }
-  return element;
+  return Math.min(value, 1);
 }
 
 function readString(record: Record<string, unknown>, key: string, fallback: string): string {

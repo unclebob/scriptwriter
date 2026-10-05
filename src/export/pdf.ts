@@ -117,14 +117,19 @@ function text(commands: string[], value: string, x: number, y: number) {
 
 function literal(value: string): string {
   let out = "(";
-  for (const char of value) {
-    const mapped = WIN[char] ?? char.codePointAt(0) ?? 0x3f;
-    const byte = mapped <= 255 ? mapped : 0x3f;
-    if (byte === 0x28 || byte === 0x29 || byte === 0x5c) out += `\\${String.fromCharCode(byte)}`;
-    else if (byte < 32 || byte > 126) out += `\\${byte.toString(8).padStart(3, "0")}`;
-    else out += String.fromCharCode(byte);
-  }
+  for (const char of value) out += escapeByte(pdfByte(char));
   return `${out})`;
+}
+
+function pdfByte(char: string): number {
+  const mapped = WIN[char] ?? char.codePointAt(0) ?? 0x3f;
+  return mapped <= 255 ? mapped : 0x3f;
+}
+
+function escapeByte(byte: number): string {
+  if (byte === 0x28 || byte === 0x29 || byte === 0x5c) return `\\${String.fromCharCode(byte)}`;
+  if (byte < 32 || byte > 126) return `\\${byte.toString(8).padStart(3, "0")}`;
+  return String.fromCharCode(byte);
 }
 
 function pdfDocument(contents: string[]): string {

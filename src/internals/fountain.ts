@@ -60,25 +60,19 @@ export function blanksBefore(type: ElementType): number {
   return 1;
 }
 
+const RETURN_NEXT: Record<ElementType, ElementType> = {
+  scene: "action",
+  action: "action",
+  character: "dialogue",
+  parenthetical: "dialogue",
+  dialogue: "action",
+  transition: "scene",
+  shot: "action",
+  act: "scene",
+};
+
 export function returnNext(type: ElementType): ElementType {
-  switch (type) {
-    case "scene":
-      return "action";
-    case "action":
-      return "action";
-    case "character":
-      return "dialogue";
-    case "parenthetical":
-      return "dialogue";
-    case "dialogue":
-      return "action";
-    case "transition":
-      return "scene";
-    case "shot":
-      return "action";
-    case "act":
-      return "scene";
-  }
+  return RETURN_NEXT[type];
 }
 
 /** The next element. Tab walks this list and then returns to the scene heading. */
@@ -93,11 +87,22 @@ export function shiftTabType(type: ElementType): ElementType {
 
 /** True when this line is directly under a character, a parenthetical, or dialogue. */
 export function underSpeech(lines: string[], index: number): boolean {
-  if (index <= 0 || lines[index - 1] === "") return false;
+  if (separated(lines, index)) return false;
+  return isSpeech(typeBefore(lines, index));
+}
+
+function separated(lines: string[], index: number): boolean {
+  return index <= 0 || lines[index - 1] === "";
+}
+
+function typeBefore(lines: string[], index: number): ElementType | null {
+  return elementAt(lines.join("\n"), offsetBefore(lines, index))?.type ?? null;
+}
+
+function offsetBefore(lines: string[], index: number): number {
   let at = 0;
   for (let i = 0; i < index - 1; i += 1) at += lines[i].length + 1;
-  const prev = elementAt(lines.join("\n"), at);
-  return prev?.type === "character" || prev?.type === "parenthetical" || prev?.type === "dialogue";
+  return at;
 }
 
 export function scriptLines(doc: string): ScriptLine[] {
@@ -157,7 +162,7 @@ export function isBlankScript(doc: string): boolean {
   return elements.length === 0 || (elements.length === 1 && elements[0].type === "scene" && elements[0].text === "");
 }
 
-export function renderLine(type: ElementType, visible: string, nextIsText = false, underSpeech = false): string {
+export function renderLine(type: ElementType, visible: string, nextIsText = false, speech = false): string {
   const text = cased(type, visible);
   switch (type) {
     case "character":
@@ -165,16 +170,13 @@ export function renderLine(type: ElementType, visible: string, nextIsText = fals
     case "shot":
       return `~${text}`;
     case "transition":
-      return isTransition(text) || text === "" ? text || ">" : `>${text}`;
+      return transitionSource(text);
     case "scene":
       return sceneSource(text);
     case "parenthetical":
       return parenSource(text);
-    case "dialogue": {
-      const body = text.replace(/\u200B/g, "");
-      if (underSpeech && body !== "") return body;
-      return `\u200B${body}`;
-    }
+    case "dialogue":
+      return dialogueSource(text, speech);
     case "action":
       return actionSource(text, nextIsText);
     case "act":
@@ -192,28 +194,48 @@ function isSpeech(type: ElementType | null): boolean {
   return type === "character" || type === "parenthetical" || type === "dialogue";
 }
 
-function classify(
-  line: string,
-  adjacent: boolean,
-  nextText: boolean,
-): { type: ElementType; text: string; marker: number } {
-  if (line.startsWith("\u200B")) {
-    return { type: "dialogue", text: line.slice(1).replace(/\u200B/g, ""), marker: 1 };
-  }
-  if (line.startsWith("@")) return { type: "character", text: line.slice(1), marker: 1 };
-  if (line.startsWith(">")) return { type: "transition", text: line.slice(1), marker: 1 };
-  if (line.startsWith("~")) return { type: "shot", text: line.slice(1), marker: 1 };
-  if (line.startsWith("!")) return { type: "action", text: line.slice(1), marker: 1 };
-  if (line.startsWith("#")) return { type: "act", text: line.slice(1), marker: 1 };
-  if (line === "." || /^\.[^.]/.test(line)) return { type: "scene", text: line.slice(1), marker: 1 };
+type Classified = { type: ElementType; text: string; marker: number };
+
+const MARKER_TYPE: Record<string, ElementType> = {
+  "@": "character",
+  ">": "transition",
+  "~": "shot",
+  "!": "action",
+  "#": "act",
+};
+
+function classify(line: string, adjacent: boolean, nextText: boolean): Classified {
+  const marked = markedLine(line);
+  if (marked) return marked;
+  return shapedLine(line, adjacent, nextText);
+}
+
+function markedLine(line: string): Classified | null {
+  if (line.startsWith("\u200B")) return { type: "dialogue", text: line.slice(1).replace(/\u200B/g, ""), marker: 1 };
+  if (MARKER_TYPE[line[0]]) return { type: MARKER_TYPE[line[0]], text: line.slice(1), marker: 1 };
+  if (forcedScene(line)) return { type: "scene", text: line.slice(1), marker: 1 };
+  return null;
+}
+
+function shapedLine(line: string, adjacent: boolean, nextText: boolean): Classified {
+  const known = knownShape(line);
+  if (known) return known;
+  return speechOrAction(line, adjacent, nextText);
+}
+
+function knownShape(line: string): Classified | null {
   if (INTRO_RE.test(line)) return { type: "scene", text: line, marker: 0 };
   if (isActLabel(line)) return { type: "act", text: line.trim(), marker: 0 };
   if (isTransition(line)) return { type: "transition", text: line, marker: 0 };
-  if (/^\(.*\)$/.test(line)) return { type: "parenthetical", text: line, marker: 0 };
+  if (wholeParen(line)) return { type: "parenthetical", text: line, marker: 0 };
+  return null;
+}
+
+function speechOrAction(line: string, adjacent: boolean, nextText: boolean): Classified {
   if (adjacent && line.startsWith("(")) return { type: "parenthetical", text: line, marker: 0 };
   if (adjacent) return { type: "dialogue", text: line.replace(/\u200B/g, ""), marker: 0 };
   if (nextText && looksLikeCue(line)) return { type: "character", text: line, marker: 0 };
-  if (isAllCaps(line) && line.length <= 50) return { type: "shot", text: line, marker: 0 };
+  if (shotShape(line)) return { type: "shot", text: line, marker: 0 };
   return { type: "action", text: line, marker: 0 };
 }
 
@@ -222,6 +244,18 @@ function cased(type: ElementType, visible: string): string {
     return visible.toUpperCase();
   }
   return visible;
+}
+
+function transitionSource(text: string): string {
+  if (text === "") return ">";
+  if (isTransition(text)) return text;
+  return `>${text}`;
+}
+
+function dialogueSource(text: string, speech: boolean): string {
+  const body = text.replace(/\u200B/g, "");
+  if (speech && body !== "") return body;
+  return `\u200B${body}`;
 }
 
 function actSource(text: string): string {
@@ -250,15 +284,31 @@ function actionSource(text: string, nextIsText: boolean): string {
 }
 
 function needsForce(text: string, nextIsText: boolean): boolean {
-  if (text.startsWith("@") || text.startsWith(">") || text.startsWith("~") || text.startsWith("!") || text.startsWith("#")) return true;
-  if (isActLabel(text)) return true;
-  if (text === "." || /^\.[^.]/.test(text)) return true;
-  if (INTRO_RE.test(text)) return true;
-  if (isTransition(text)) return true;
-  if (/^\(.*\)$/.test(text)) return true;
-  if (nextIsText && looksLikeCue(text)) return true;
-  if (!nextIsText && isAllCaps(text) && text.length <= 50) return true;
-  return false;
+  if (forcedMarker(text)) return true;
+  return cueOrShot(text, nextIsText);
+}
+
+function forcedMarker(text: string): boolean {
+  if (MARKER_TYPE[text[0]]) return true;
+  if (isActLabel(text) || forcedScene(text)) return true;
+  return INTRO_RE.test(text) || isTransition(text) || wholeParen(text);
+}
+
+function forcedScene(text: string): boolean {
+  return text === "." || /^\.[^.]/.test(text);
+}
+
+function wholeParen(text: string): boolean {
+  return /^\(.*\)$/.test(text);
+}
+
+function cueOrShot(text: string, nextIsText: boolean): boolean {
+  if (nextIsText) return looksLikeCue(text);
+  return shotShape(text);
+}
+
+function shotShape(text: string): boolean {
+  return isAllCaps(text) && text.length <= 50;
 }
 
 function isTransition(line: string): boolean {

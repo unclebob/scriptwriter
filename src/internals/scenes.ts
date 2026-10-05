@@ -1,4 +1,4 @@
-import { parseScript } from "./fountain";
+import { parseScript, type ScriptElement } from "./fountain";
 import { cueName, sceneParts } from "./smarttype";
 
 export type SceneRow = {
@@ -30,30 +30,56 @@ export function sceneRows(doc: string): SceneRow[] {
       act = element.text.trim();
       continue;
     }
-    if (element.type !== "scene") continue;
+    const row = sceneRow(elements, i, act, number + 1);
+    if (!row) continue;
     number += 1;
-    const actors: string[] = [];
-    const seen = new Set<string>();
-    for (let j = i + 1; j < elements.length; j += 1) {
-      const next = elements[j];
-      if (next.type === "scene" || next.type === "act") break;
-      if (next.type !== "character") continue;
-      const name = cueName(next.text);
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      actors.push(name);
-    }
-    rows.push({
-      number,
-      act,
-      location: locationOf(element.text),
-      actors,
-      text: element.text,
-      from: element.from,
-      marker: element.marker,
-    });
+    rows.push(row);
   }
   return rows;
+}
+
+function sceneRow(elements: ScriptElement[], index: number, act: string, number: number): SceneRow | null {
+  const element = elements[index];
+  if (element.type !== "scene") return null;
+  return {
+    number,
+    act,
+    location: locationOf(element.text),
+    actors: actorsAfter(elements, index),
+    text: element.text,
+    from: element.from,
+    marker: element.marker,
+  };
+}
+
+function actorsAfter(elements: ScriptElement[], index: number): string[] {
+  const actors: string[] = [];
+  const seen = new Set<string>();
+  for (let j = index + 1; j < elements.length; j += 1) {
+    if (takeActor(elements[j], actors, seen)) break;
+  }
+  return actors;
+}
+
+function takeActor(element: ScriptElement, actors: string[], seen: Set<string>): boolean {
+  if (endsList(element)) return true;
+  remember(actors, seen, characterCue(element));
+  return false;
+}
+
+function endsList(element: ScriptElement): boolean {
+  return element.type === "scene" || element.type === "act";
+}
+
+function characterCue(element: ScriptElement): string {
+  if (element.type !== "character") return "";
+  return cueName(element.text);
+}
+
+function remember(actors: string[], seen: Set<string>, name: string) {
+  if (!name || seen.has(name)) return;
+  seen.add(name);
+  actors.push(name);
 }
 
 /** Acts and scene headings in script order, for the list beside the page. */

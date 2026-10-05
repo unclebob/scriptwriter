@@ -55,91 +55,173 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
+type Sheet = { pages: Placed[][]; used: number };
+
+type Remainder = { lines: string[]; chars: number[]; continuation: boolean; done: boolean };
+
 export function paginate(doc: string): Placed[][] {
   const blocks = blocksOf(doc);
-  const pages: Placed[][] = [[]];
-  let used = 0;
-
-  function put(line: Placed) {
-    pages[pages.length - 1].push(line);
-    used += 1;
-  }
-
-  function newPage() {
-    pages.push([]);
-    used = 0;
-  }
-
+  const sheet: Sheet = { pages: [[]], used: 0 };
   for (let index = 0; index < blocks.length; index += 1) {
-    placeBlock(blocks[index], blocks[index + 1] ?? null);
+    placeBlock(sheet, blocks[index], blocks[index + 1] ?? null);
   }
+  return finished(sheet.pages);
+}
 
-  function placeBlock(block: Block, next: Block | null) {
-    let lines = block.lines;
-    let chars = block.chars;
-    let blanks = used === 0 ? 0 : block.blanksBefore;
-    if (block.type === "act" && used > 0) {
-      newPage();
-      blanks = 0;
-    }
-    if (keepsWithNext(block.type) && next && used > 0) {
-      const follow = Math.min(2, next.blanksBefore + next.lines.length);
-      const group = blanks + lines.length + follow;
-      const room = LINES_PER_PAGE - used;
-      if (group > room && group <= LINES_PER_PAGE) {
-        newPage();
-        blanks = 0;
-      }
-    }
-    let continuation = false;
-    let first = true;
-    while (lines.length > 0) {
-      if (used === LINES_PER_PAGE) newPage();
-      if (first) {
-        while (blanks > 0 && used < LINES_PER_PAGE) {
-          put({ text: "", role: "blank" });
-          blanks -= 1;
-        }
-        if (blanks > 0) {
-          newPage();
-          blanks = 0;
-        }
-        first = false;
-      }
-      const continued = continuation && block.type === "dialogue";
-      const budget = LINES_PER_PAGE - used - (continued ? 1 : 0);
-      if (lines.length <= budget) {
-        if (continued) put(contd(block, chars[0] ?? 0));
-        putLines(block, lines, chars, put);
-        return;
-      }
-      if (block.type === "dialogue") {
-        const room = budget - 1;
-        if (room < 1) {
-          newPage();
-          continue;
-        }
-        if (continued) put(contd(block, chars[0] ?? 0));
-        putLines(block, lines.slice(0, room), chars.slice(0, room), put);
-        put({ text: "(MORE)", role: "more", source: sourceAt(block, chars[room] ?? block.lines.join("").length) });
-        lines = lines.slice(room);
-        chars = chars.slice(room);
-        newPage();
-        continuation = true;
-        continue;
-      }
-      if (budget < 1) {
-        newPage();
-        continue;
-      }
-      putLines(block, lines.slice(0, budget), chars.slice(0, budget), put);
-      lines = lines.slice(budget);
-      chars = chars.slice(budget);
-    }
+function finished(pages: Placed[][]): Placed[][] {
+  if (pages.length > 1 && lastPageEmpty(pages)) pages.pop();
+  if (pages.length === 0) return [[]];
+  return pages;
+}
+
+function lastPageEmpty(pages: Placed[][]): boolean {
+  return pages[pages.length - 1].length === 0;
+}
+
+function placeBlock(sheet: Sheet, block: Block, next: Block | null) {
+  const blanks = startBlanks(sheet, block, next);
+  writeBlock(sheet, block, block.lines, block.chars, blanks);
+}
+
+function startBlanks(sheet: Sheet, block: Block, next: Block | null): number {
+  const blanks = breakForAct(sheet, block);
+  if (heldWithNext(sheet, block, next, blanks)) return 0;
+  return blanks;
+}
+
+function breakForAct(sheet: Sheet, block: Block): number {
+  if (block.type === "act" && sheet.used > 0) {
+    newPage(sheet);
+    return 0;
   }
+  return sheet.used === 0 ? 0 : block.blanksBefore;
+}
 
-  if (pages.length > 1 && pages[pages.length - 1].length === 0) pages.pop();
-  return pages.length === 0 ? [[]] : pages;
+function heldWithNext(sheet: Sheet, block: Block, next: Block | null, blanks: number): boolean {
+  if (!canHold(sheet, block, next)) return false;
+  if (keepPage(sheet, block, next, blanks)) return false;
+  newPage(sheet);
+  return true;
+}
+
+function canHold(sheet: Sheet, block: Block, next: Block | null): next is Block {
+  return keepsWithNext(block.type) && next !== null && sheet.used > 0;
+}
+
+function keepPage(sheet: Sheet, block: Block, next: Block, blanks: number): boolean {
+  const follow = Math.min(2, next.blanksBefore + next.lines.length);
+  const group = blanks + block.lines.length + follow;
+  const room = LINES_PER_PAGE - sheet.used;
+  return group <= room || group > LINES_PER_PAGE;
+}
+
+function writeBlock(sheet: Sheet, block: Block, lines: string[], chars: number[], blanks: number) {
+  let rest = lines;
+  let offsets = chars;
+  let pending = blanks;
+  let continuation = false;
+  let first = true;
+  while (rest.length > 0) {
+    const step = nextSlice(sheet, block, rest, offsets, pending, continuation, first);
+    rest = step.lines;
+    offsets = step.chars;
+    continuation = step.continuation;
+    pending = 0;
+    first = false;
+    if (step.done) return;
+  }
+}
+
+function nextSlice(
+  sheet: Sheet,
+  block: Block,
+  lines: string[],
+  chars: number[],
+  blanks: number,
+  continuation: boolean,
+  first: boolean,
+): Remainder {
+  if (sheet.used === LINES_PER_PAGE) newPage(sheet);
+  if (first) placeBlanks(sheet, blanks);
+  return takeLines(sheet, block, lines, chars, continuation);
+}
+
+function placeBlanks(sheet: Sheet, blanks: number) {
+  let left = blanks;
+  while (left > 0 && sheet.used < LINES_PER_PAGE) {
+    put(sheet, { text: "", role: "blank" });
+    left -= 1;
+  }
+  if (left > 0) newPage(sheet);
+}
+
+function takeLines(sheet: Sheet, block: Block, lines: string[], chars: number[], continuation: boolean): Remainder {
+  const continued = continuation && block.type === "dialogue";
+  const budget = LINES_PER_PAGE - sheet.used - (continued ? 1 : 0);
+  if (lines.length <= budget) {
+    writeFit(sheet, block, lines, chars, continued);
+    return { lines: [], chars: [], continuation, done: true };
+  }
+  return breakLines(sheet, block, lines, chars, budget, continued);
+}
+
+function writeFit(sheet: Sheet, block: Block, lines: string[], chars: number[], continued: boolean) {
+  if (continued) put(sheet, contd(block, chars[0] ?? 0));
+  putLines(block, lines, chars, (line) => put(sheet, line));
+}
+
+function breakLines(
+  sheet: Sheet,
+  block: Block,
+  lines: string[],
+  chars: number[],
+  budget: number,
+  continued: boolean,
+): Remainder {
+  if (block.type === "dialogue") return breakDialogue(sheet, block, lines, chars, budget, continued);
+  return breakProse(sheet, block, lines, chars, budget);
+}
+
+function breakDialogue(
+  sheet: Sheet,
+  block: Block,
+  lines: string[],
+  chars: number[],
+  budget: number,
+  continued: boolean,
+): Remainder {
+  const room = budget - 1;
+  if (room < 1) {
+    newPage(sheet);
+    return { lines, chars, continuation: continued, done: false };
+  }
+  writeFit(sheet, block, lines.slice(0, room), chars.slice(0, room), continued);
+  put(sheet, { text: "(MORE)", role: "more", source: moreSource(block, chars, room) });
+  newPage(sheet);
+  return { lines: lines.slice(room), chars: chars.slice(room), continuation: true, done: false };
+}
+
+function moreSource(block: Block, chars: number[], room: number): number {
+  return sourceAt(block, chars[room] ?? block.lines.join("").length);
+}
+
+function breakProse(sheet: Sheet, block: Block, lines: string[], chars: number[], budget: number): Remainder {
+  if (budget < 1) {
+    newPage(sheet);
+    return { lines, chars, continuation: false, done: false };
+  }
+  putLines(block, lines.slice(0, budget), chars.slice(0, budget), (line) => put(sheet, line));
+  return { lines: lines.slice(budget), chars: chars.slice(budget), continuation: false, done: false };
+}
+
+function put(sheet: Sheet, line: Placed) {
+  sheet.pages[sheet.pages.length - 1].push(line);
+  sheet.used += 1;
+}
+
+function newPage(sheet: Sheet) {
+  sheet.pages.push([]);
+  sheet.used = 0;
 }
 
 export function pageAt(doc: string, pos: number): { page: number; pages: number } {
@@ -182,7 +264,7 @@ function blocksOf(doc: string): Block[] {
       type: element.type,
       lines: wrapped.lines,
       chars: wrapped.chars,
-      blanksBefore: index === 0 ? 0 : blankCount(doc, elements[index - 1].to, element.from),
+      blanksBefore: leadingBlanks(doc, elements, index),
       from: element.from,
       marker: element.marker,
       speaker,
@@ -200,6 +282,11 @@ function wrapTracked(text: string, width: number): { lines: string[]; chars: num
     if (text[at] === " ") at += 1;
   }
   return { lines, chars };
+}
+
+function leadingBlanks(doc: string, elements: { to: number; from: number }[], index: number): number {
+  if (index === 0) return 0;
+  return blankCount(doc, elements[index - 1].to, elements[index].from);
 }
 
 function blankCount(doc: string, prevTo: number, from: number): number {

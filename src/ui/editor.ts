@@ -35,7 +35,8 @@ class SceneNumber extends WidgetType {
   }
 
   eq(other: WidgetType): boolean {
-    return other instanceof SceneNumber && other.label === this.label && other.at === this.at;
+    if (!(other instanceof SceneNumber)) return false;
+    return sameScene(other, this);
   }
 
   toDOM(): HTMLElement {
@@ -88,15 +89,15 @@ class PageRule extends WidgetType {
   }
 }
 
+function sameScene(other: SceneNumber, widget: SceneNumber): boolean {
+  return other.label === widget.label && other.at === widget.at;
+}
+
 export function createEditor(parent: HTMLElement, doc: string, hooks: EditorHooks): ScriptEditor {
   const view = new EditorView({
     parent,
     state: stateFor(doc),
-    dispatch: (transaction) => {
-      view.update([transaction]);
-      if (transaction.docChanged) hooks.onChange(view.state.doc.toString());
-      if (transaction.docChanged || transaction.selection) hooks.onCursor(view.state.doc.toString(), view.state.selection.main.head);
-    },
+    dispatch: (transaction) => dispatchTo(view, hooks, transaction),
   });
   return {
     view,
@@ -118,9 +119,31 @@ export function createEditor(parent: HTMLElement, doc: string, hooks: EditorHook
   };
 }
 
+function dispatchTo(view: EditorView, hooks: EditorHooks, transaction: Transaction) {
+  view.update([transaction]);
+  notify(hooks, view, transaction);
+}
+
+function notify(hooks: EditorHooks, view: EditorView, transaction: Transaction) {
+  const doc = view.state.doc.toString();
+  notifyChange(hooks, doc, transaction.docChanged);
+  notifyCursor(hooks, doc, view.state.selection.main.head, cursorMoved(transaction));
+}
+
+function notifyChange(hooks: EditorHooks, doc: string, changed: boolean) {
+  if (changed) hooks.onChange(doc);
+}
+
+function notifyCursor(hooks: EditorHooks, doc: string, cursor: number, moved: boolean) {
+  if (moved) hooks.onCursor(doc, cursor);
+}
+
+function cursorMoved(transaction: Transaction): boolean {
+  return transaction.docChanged || transaction.selection != null;
+}
+
 function stateFor(doc: string): EditorState {
-  const first = elementAt(doc, 0);
-  const anchor = first && first.from === 0 ? Math.min(first.from + first.marker, doc.length) : 0;
+  const anchor = openingCursor(doc);
   return EditorState.create({
     doc,
     selection: { anchor },
@@ -164,28 +187,67 @@ const scriptTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
 });
 
+function openingCursor(doc: string): number {
+  const first = elementAt(doc, 0);
+  if (!startsDocument(first)) return 0;
+  return Math.min(first.from + first.marker, doc.length);
+}
+
+function startsDocument(first: { from: number } | null): first is { from: number; marker: number } {
+  return first !== null && first.from === 0;
+}
+
 function buildDecorations(state: EditorState): DecorationSet {
   const doc = state.doc.toString();
+  return Decoration.set([...elementRanges(state, doc), ...pageRanges(state, doc)], true);
+}
+
+function elementRanges(state: EditorState, doc: string): Range<Decoration>[] {
   const numbers = new Map(sceneRows(doc).map((scene) => [scene.from, scene.number]));
   const ranges: Range<Decoration>[] = [];
-  for (const element of parseScript(doc)) {
-    const line = state.doc.lineAt(Math.min(element.from, state.doc.length));
-    ranges.push(Decoration.line({ class: `el-${element.type}` }).range(line.from));
-    if (element.marker > 0) {
-      ranges.push(Decoration.replace({}).range(element.from, element.from + element.marker));
-    }
-    const number = element.type === "scene" ? numbers.get(element.from) : undefined;
-    if (number) {
-      ranges.push(Decoration.widget({ widget: new SceneNumber(String(number), element.from), side: -1 }).range(element.from + element.marker));
-    }
-  }
+  for (const element of parseScript(doc)) ranges.push(...decorationsFor(state, element, numbers));
+  return ranges;
+}
+
+function decorationsFor(
+  state: EditorState,
+  element: { type: string; from: number; marker: number },
+  numbers: Map<number, number>,
+): Range<Decoration>[] {
+  const line = state.doc.lineAt(Math.min(element.from, state.doc.length));
+  const ranges = [Decoration.line({ class: `el-${element.type}` }).range(line.from)];
+  pushMarker(ranges, element);
+  pushSceneNumber(ranges, element, numbers);
+  return ranges;
+}
+
+function pushMarker(ranges: Range<Decoration>[], element: { from: number; marker: number }) {
+  if (element.marker <= 0) return;
+  ranges.push(Decoration.replace({}).range(element.from, element.from + element.marker));
+}
+
+function pushSceneNumber(ranges: Range<Decoration>[], element: { type: string; from: number; marker: number }, numbers: Map<number, number>) {
+  const number = sceneNumber(element, numbers);
+  if (number === undefined) return;
+  ranges.push(Decoration.widget({ widget: new SceneNumber(String(number), element.from), side: -1 }).range(element.from + element.marker));
+}
+
+function sceneNumber(element: { type: string; from: number }, numbers: Map<number, number>): number | undefined {
+  if (element.type !== "scene") return undefined;
+  return numbers.get(element.from);
+}
+
+function pageRanges(state: EditorState, doc: string): Range<Decoration>[] {
+  const ranges: Range<Decoration>[] = [];
+  for (const [index, source] of pageStarts(doc).entries()) ranges.push(pageDecoration(state, index, source));
+  return ranges;
+}
+
+function pageDecoration(state: EditorState, index: number, source: number): Range<Decoration> {
+  const at = Math.max(0, Math.min(source, state.doc.length));
+  const line = state.doc.lineAt(at);
   // A block widget has to sit on a line boundary. A page that starts mid-element marks that line.
-  for (const [index, source] of pageStarts(doc).entries()) {
-    const at = Math.max(0, Math.min(source, state.doc.length));
-    const line = state.doc.lineAt(at);
-    ranges.push(Decoration.widget({ widget: new PageRule(String(index + 2)), side: -1, block: true }).range(line.from));
-  }
-  return Decoration.set(ranges, true);
+  return Decoration.widget({ widget: new PageRule(String(index + 2)), side: -1, block: true }).range(line.from);
 }
 
 // Block widgets have to come from a state field. A view plugin rejects them.
@@ -236,7 +298,11 @@ const normalizeInput = EditorState.transactionFilter.of((transaction) => {
 function spanSelection(transaction: Transaction): Transaction {
   const selection = transaction.newSelection.main;
   if (selection.empty) return transaction;
-  const span = elementSelection(transaction.newDoc.toString(), selection.anchor, selection.head);
+  return snapped(transaction, selection.anchor, selection.head);
+}
+
+function snapped(transaction: Transaction, anchor: number, head: number): Transaction {
+  const span = elementSelection(transaction.newDoc.toString(), anchor, head);
   if (!span) return transaction;
   return transaction.startState.update({
     changes: transaction.changes,
@@ -282,17 +348,27 @@ const completeSource: CompletionSource = (context) => {
 }
 
 function onEnter(view: EditorView): boolean {
-  if (completionStatus(view.state) === "active") {
-    const element = elementAt(view.state.doc.toString(), view.state.selection.main.head);
-    acceptCompletion(view);
-    if (element?.type === "scene" || element?.type === "transition") {
-      offer(view);
-      return true;
-    }
-  }
+  if (completionStatus(view.state) === "active") return acceptEnter(view);
   apply(view, enter(view.state.doc.toString(), view.state.selection.main.head));
   offer(view);
   return true;
+}
+
+function acceptEnter(view: EditorView): boolean {
+  const type = elementTypeAt(view);
+  acceptCompletion(view);
+  if (reopensCompletion(type)) offer(view);
+  return true;
+}
+
+function elementTypeAt(view: EditorView): string {
+  const element = elementAt(view.state.doc.toString(), view.state.selection.main.head);
+  if (!element) return "";
+  return element.type;
+}
+
+function reopensCompletion(type: string): boolean {
+  return type === "scene" || type === "transition";
 }
 
 function onTab(view: EditorView): boolean {
@@ -314,17 +390,24 @@ function onShiftTab(view: EditorView): boolean {
 function onBackspace(view: EditorView): boolean {
   const selection = view.state.selection.main;
   if (!selection.empty) return removeCovered(view);
-  const next = backspace(view.state.doc.toString(), selection.head);
+  return deleteBackward(view, selection.head);
+}
+
+function deleteBackward(view: EditorView, head: number): boolean {
+  const next = backspace(view.state.doc.toString(), head);
   if (!next) return false;
   apply(view, next);
   return true;
 }
 
 function onDelete(view: EditorView): boolean {
-  const doc = view.state.doc.toString();
   const selection = view.state.selection.main;
   if (!selection.empty) return removeCovered(view);
-  const next = deleteForward(doc, selection.head);
+  return deleteAhead(view, selection.head);
+}
+
+function deleteAhead(view: EditorView, head: number): boolean {
+  const next = deleteForward(view.state.doc.toString(), head);
   if (!next) return false;
   apply(view, next);
   return true;
@@ -361,17 +444,30 @@ function setType(type: ElementType) {
 function apply(view: EditorView, next: { doc: string; cursor: number }) {
   const doc = view.state.doc.toString();
   const cursor = Math.max(0, Math.min(next.cursor, next.doc.length));
-  if (next.doc === doc && cursor === view.state.selection.main.head) return;
+  if (unchanged(doc, next.doc, cursor, view.state.selection.main.head)) return;
   view.dispatch({
-    changes: next.doc === doc ? undefined : { from: 0, to: doc.length, insert: next.doc },
+    changes: docChange(doc, next.doc),
     selection: { anchor: cursor },
     scrollIntoView: true,
   });
 }
 
+function unchanged(doc: string, next: string, cursor: number, head: number): boolean {
+  return next === doc && cursor === head;
+}
+
+function docChange(doc: string, next: string): { from: number; to: number; insert: string } | undefined {
+  if (next === doc) return undefined;
+  return { from: 0, to: doc.length, insert: next };
+}
+
 function offer(view: EditorView) {
+  if (hasCompletion(view)) startCompletion(view);
+}
+
+function hasCompletion(view: EditorView): boolean {
   const found = completions(view.state.doc.toString(), view.state.selection.main.head);
-  if (found && found.options.length > 0) startCompletion(view);
+  return found !== null && found.options.length > 0;
 }
 
 export function findInScript(editor: ScriptEditor) {
@@ -386,14 +482,17 @@ export function useElement(editor: ScriptEditor, type: ElementType) {
 }
 
 export function elementLabel(doc: string, cursor: number): string {
-  const element = elementAt(doc, cursor);
-  return element ? ELEMENT_LABEL[element.type] : "Blank";
+  return elementName(doc, cursor, "Blank");
 }
 
 /** The left-margin name. Blank lines are not labeled. */
 export function marginText(doc: string, cursor: number): string {
+  return elementName(doc, cursor, "");
+}
+
+function elementName(doc: string, cursor: number, empty: string): string {
   const element = elementAt(doc, cursor);
-  return element ? ELEMENT_LABEL[element.type] : "";
+  return element ? ELEMENT_LABEL[element.type] : empty;
 }
 
 export function pageLabel(doc: string, cursor: number): string {

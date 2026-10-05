@@ -67,6 +67,12 @@ describe("script folder", () => {
     expect(() => parseScriptJson("{")).toThrow(/not JSON/);
     expect(() => parseScriptJson("[]")).toThrow(/not an object/);
     expect(() => parseScriptJson('{"elements":[{"type":"note","text":"Hi"}]}')).toThrow(/unknown type/);
+    expect(() =>
+      parseScriptJson('{"elements":[{"type":"scene","text":"HALL"},{"type":"action","text":"Hi","blanksBefore":-1}]}'),
+    ).toThrow("script.json element 2 has a bad blanksBefore.");
+    expect(() =>
+      parseScriptJson('{"elements":[{"type":"action","text":"Hi","blanksBefore":1.5}]}'),
+    ).toThrow("script.json element 1 has a bad blanksBefore.");
   });
 
   it("loads the sample script shipped with the app", async () => {

@@ -50,6 +50,12 @@ describe("scenes", () => {
     ]);
   });
 
+  it("sorts a heading with no location after the named ones", () => {
+    expect(scenesCsv("INT.\n\nINT. KITCHEN - DAY\n")).toBe(
+      ["Location,Scene,Act,Actors", "KITCHEN,2,,", ",1,,", ""].join("\n"),
+    );
+  });
+
   it("sorts the csv by location and then by scene number", () => {
     expect(scenesCsv(script)).toBe(
       [

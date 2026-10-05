@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { renderPdf } from "../export/pdf";
 import { ELEMENT_LABEL, ELEMENTS, editorDoc, elementAt } from "../internals/fountain";
 import { joinPath } from "../internals/path";
-import { outline, scenesCsv } from "../internals/scenes";
+import { outline, scenesCsv, type OutlineRow } from "../internals/scenes";
 import { loadScript, saveScript, type Script } from "../internals/script";
 import { createEditor, elementLabel, findInScript, marginText, pageLabel, useElement, type ScriptEditor } from "../ui/editor";
 import { startupScriptPath, tauriFs } from "../ui/tauriFs";
@@ -180,21 +180,28 @@ function placeMarginLabel() {
 
 function positionMarginLabel(): boolean {
   const pos = editor.view.state.selection.main.head;
-  const name = marginText(editor.getDoc(), pos);
   const coords = editor.view.coordsAtPos(pos);
-  if (!coords) {
-    marginLabel.hidden = true;
-    return false;
-  }
-  if (!name) {
-    marginLabel.hidden = true;
-    marginLabel.textContent = "";
-    return true;
-  }
+  if (!coords) return hideMargin();
+  return showMargin(marginText(editor.getDoc(), pos), coords.top);
+}
+
+function hideMargin(): boolean {
+  marginLabel.hidden = true;
+  return false;
+}
+
+function showMargin(name: string, top: number): boolean {
+  if (!name) return clearMargin();
   const page = pageEl.getBoundingClientRect();
   marginLabel.hidden = false;
   marginLabel.textContent = name;
-  marginLabel.style.top = `${coords.top - page.top}px`;
+  marginLabel.style.top = `${top - page.top}px`;
+  return true;
+}
+
+function clearMargin(): boolean {
+  marginLabel.hidden = true;
+  marginLabel.textContent = "";
   return true;
 }
 
@@ -213,49 +220,109 @@ function openFormatMenu(x: number, y: number) {
 }
 
 function markFormat() {
+  const type = currentType();
+  for (const button of formatMenu.querySelectorAll("button")) markFormatButton(button, type);
+}
+
+function currentType(): string {
   const element = elementAt(editor.getDoc(), editor.view.state.selection.main.head);
-  for (const button of formatMenu.querySelectorAll("button")) {
-    const on = element !== null && button.dataset.element === element.type;
-    button.classList.toggle("is-current", on);
-    if (on) button.setAttribute("aria-current", "true");
-    else button.removeAttribute("aria-current");
-  }
+  if (!element) return "";
+  return element.type;
+}
+
+function markFormatButton(button: Element, type: string) {
+  if (!(button instanceof HTMLButtonElement)) return;
+  setCurrent(button, sameElement(button, type));
+}
+
+function sameElement(button: HTMLButtonElement, type: string): boolean {
+  return type !== "" && button.dataset.element === type;
+}
+
+function setCurrent(button: HTMLButtonElement, on: boolean) {
+  button.classList.toggle("is-current", on);
+  if (on) button.setAttribute("aria-current", "true");
+  else button.removeAttribute("aria-current");
 }
 
 /** Beside the text column, and level with a line. Page padding above and below the text is not the margin. */
 function inScriptMargin(event: MouseEvent): boolean {
   const box = editor.view.contentDOM.getBoundingClientRect();
-  if (event.clientY < box.top - 2 || event.clientY > box.bottom + 2) return false;
-  return event.clientX < box.left - 1 || event.clientX > box.right + 1;
+  if (outsideY(event.clientY, box)) return false;
+  return outsideX(event.clientX, box);
+}
+
+function outsideY(y: number, box: DOMRect): boolean {
+  return y < box.top - 2 || y > box.bottom + 2;
+}
+
+function outsideX(x: number, box: DOMRect): boolean {
+  return x < box.left - 1 || x > box.right + 1;
 }
 
 function marginPosition(event: MouseEvent): number | null {
   const line = lineUnder(event.clientY);
   if (!line) return null;
+  return positionOnLine(event, line);
+}
+
+function positionOnLine(event: MouseEvent, line: HTMLElement): number | null {
+  const pos = coordsPos(event);
+  if (pos === null) return null;
+  return posOn(pos, line);
+}
+
+function coordsPos(event: MouseEvent): number | null {
   const view = editor.view;
   const box = view.contentDOM.getBoundingClientRect();
   const x = Math.min(Math.max(event.clientX, box.left + 1), box.right - 1);
-  const pos = view.posAtCoords({ x, y: event.clientY }, false);
-  if (pos == null || lineOf(pos) !== line) return null;
+  return view.posAtCoords({ x, y: event.clientY }, false);
+}
+
+function posOn(pos: number, line: HTMLElement): number | null {
+  if (lineOf(pos) !== line) return null;
   return pos;
 }
 
 /** The screen line under this y. Line-block tops are document offsets, not screen positions. */
 function lineUnder(clientY: number): HTMLElement | null {
-  for (const line of editor.view.contentDOM.querySelectorAll(".cm-line")) {
-    if (!(line instanceof HTMLElement)) continue;
-    const rect = line.getBoundingClientRect();
-    if (clientY >= rect.top - 1 && clientY <= rect.bottom + 1) return line;
-  }
-  return null;
+  return firstLine([...editor.view.contentDOM.querySelectorAll(".cm-line")], clientY);
+}
+
+function firstLine(lines: Element[], clientY: number): HTMLElement | null {
+  const found = lines.find((line) => containsY(line, clientY));
+  return found instanceof HTMLElement ? found : null;
+}
+
+function containsY(line: Element, clientY: number): boolean {
+  if (!(line instanceof HTMLElement)) return false;
+  return insideY(line.getBoundingClientRect(), clientY);
+}
+
+function insideY(rect: DOMRect, clientY: number): boolean {
+  return clientY >= rect.top - 1 && clientY <= rect.bottom + 1;
 }
 
 function lineOf(pos: number): HTMLElement | null {
   const view = editor.view;
   const found = view.domAtPos(Math.min(Math.max(pos, 0), view.state.doc.length));
-  const node = found.node instanceof Element ? found.node : found.node.parentElement;
-  const line = node?.closest(".cm-line");
-  return line instanceof HTMLElement ? line : null;
+  return closestLine(found.node);
+}
+
+function closestLine(node: Node): HTMLElement | null {
+  const element = asElement(node);
+  if (!element) return null;
+  return htmlLine(element.closest(".cm-line"));
+}
+
+function asElement(node: Node): Element | null {
+  if (node instanceof Element) return node;
+  return node.parentElement;
+}
+
+function htmlLine(node: Element | null): HTMLElement | null {
+  if (node instanceof HTMLElement) return node;
+  return null;
 }
 
 function schedule() {
@@ -301,27 +368,47 @@ function current(): Script {
 }
 
 async function openScript(root: string) {
+  const loaded = await loadAfterSave(root);
+  if (loaded) showLoaded(loaded);
+}
+
+async function loadAfterSave(root: string): Promise<Script | null> {
+  if (!(await saved())) return null;
+  return loadOrWarn(root);
+}
+
+async function saved(): Promise<boolean> {
   try {
     await saveNow();
+    return true;
   } catch {
-    return;
+    return false;
   }
-  let loaded: Script;
+}
+
+async function loadOrWarn(root: string): Promise<Script | null> {
   try {
-    loaded = await loadScript(fs, root);
+    return await loadScript(fs, root);
   } catch (error) {
     showWarning(message(error));
-    return;
+    return null;
   }
+}
+
+function showLoaded(loaded: Script) {
   script = loaded;
   fillFields(loaded);
   editor.setDoc(editorDoc(loaded.body));
   script.body = editor.getDoc();
   sceneKey = "";
-  if (loaded.warnings.length > 0) showWarning(loaded.warnings.join(" "));
-  else clearWarnings();
+  warnAll(loaded.warnings);
   paint(editor.getDoc(), editor.view.state.selection.main.head);
   editor.focus();
+}
+
+function warnAll(list: string[]) {
+  if (list.length > 0) showWarning(list.join(" "));
+  else clearWarnings();
 }
 
 async function chooseScript() {
@@ -331,32 +418,40 @@ async function chooseScript() {
 }
 
 async function exportPdf() {
-  if (!script) return;
-  const next = current();
+  const next = editing();
+  if (!next) return;
   const path = await save({
     title: "Export PDF",
     defaultPath: joinPath(next.root, `${fileStem(next.title)}.pdf`),
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
-  if (!path) return;
-  try {
-    await fs.writeText(path, renderPdf(next));
-  } catch (error) {
-    showWarning(message(error));
-  }
+  await writeExport(path, renderPdf(next));
 }
 
 async function exportScenes() {
-  if (!script) return;
-  const next = current();
+  const next = editing();
+  if (!next) return;
   const path = await save({
     title: "Export Scenes",
     defaultPath: joinPath(next.root, `${fileStem(next.title)}-scenes.csv`),
     filters: [{ name: "CSV", extensions: ["csv"] }],
   });
+  await writeExport(path, scenesCsv(next.body));
+}
+
+function editing(): Script | null {
+  if (!script) return null;
+  return current();
+}
+
+async function writeExport(path: string | null, text: string) {
   if (!path) return;
+  await writeText(path, text);
+}
+
+async function writeText(path: string, text: string) {
   try {
-    await fs.writeText(path, scenesCsv(next.body));
+    await fs.writeText(path, text);
   } catch (error) {
     showWarning(message(error));
   }
@@ -380,30 +475,76 @@ function paint(doc: string, cursor: number) {
 
 function paintScenes(doc: string, cursor: number) {
   const rows = outline(doc);
-  const key = rows.map((row) => `${row.kind}\0${row.number ?? ""}\0${row.from}\0${row.text}`).join("\n");
-  if (key !== sceneKey) {
-    sceneKey = key;
-    scenesEl.replaceChildren();
-    for (const row of rows) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = row.kind === "act" ? "scene outline-act" : "scene";
-      button.textContent = row.number === null ? row.text : `${row.number}  ${row.text}`;
-      button.dataset.from = String(row.from);
-      button.addEventListener("click", () => {
-        const element = elementAt(editor.getDoc(), row.from);
-        editor.goto((element?.from ?? row.from) + (element?.marker ?? 0));
-      });
-      scenesEl.append(button);
-    }
-  }
-  let current: HTMLButtonElement | null = null;
-  for (const button of scenesEl.querySelectorAll<HTMLButtonElement>("button")) {
-    const from = Number(button.dataset.from);
-    if (from <= cursor) current = button;
-    button.removeAttribute("aria-current");
-  }
+  const key = outlineKey(rows);
+  if (key !== sceneKey) replaceOutline(rows, key);
+  markOutline(cursor);
+}
+
+function outlineKey(rows: OutlineRow[]): string {
+  return rows.map(outlineToken).join("\n");
+}
+
+function outlineToken(row: OutlineRow): string {
+  return `${row.kind}\0${rowNumber(row)}\0${row.from}\0${row.text}`;
+}
+
+function rowNumber(row: OutlineRow): string {
+  if (row.number === null) return "";
+  return String(row.number);
+}
+
+function replaceOutline(rows: OutlineRow[], key: string) {
+  sceneKey = key;
+  scenesEl.replaceChildren();
+  for (const row of rows) scenesEl.append(outlineButton(row));
+}
+
+function outlineButton(row: OutlineRow): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = outlineClass(row);
+  button.textContent = outlineLabel(row);
+  button.dataset.from = String(row.from);
+  button.addEventListener("click", () => gotoRow(row.from));
+  return button;
+}
+
+function outlineClass(row: OutlineRow): string {
+  return row.kind === "act" ? "scene outline-act" : "scene";
+}
+
+function outlineLabel(row: OutlineRow): string {
+  if (row.number === null) return row.text;
+  return `${row.number}  ${row.text}`;
+}
+
+function gotoRow(from: number) {
+  editor.goto(rowCursor(elementAt(editor.getDoc(), from), from));
+}
+
+function rowCursor(element: { from: number; marker: number } | null, from: number): number {
+  if (!element) return from;
+  return element.from + element.marker;
+}
+
+function markOutline(cursor: number) {
+  const buttons = [...scenesEl.querySelectorAll<HTMLButtonElement>("button")];
+  clearCurrent(buttons);
+  const current = buttonAt(buttons, cursor);
   if (current) current.setAttribute("aria-current", "true");
+}
+
+function clearCurrent(buttons: HTMLButtonElement[]) {
+  for (const button of buttons) button.removeAttribute("aria-current");
+}
+
+function buttonAt(buttons: HTMLButtonElement[], cursor: number): HTMLButtonElement | null {
+  return buttons.reduce<HTMLButtonElement | null>((current, button) => laterButton(current, button, cursor), null);
+}
+
+function laterButton(current: HTMLButtonElement | null, button: HTMLButtonElement, cursor: number): HTMLButtonElement | null {
+  if (Number(button.dataset.from) <= cursor) return button;
+  return current;
 }
 
 function fileStem(title: string): string {
