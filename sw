@@ -37,7 +37,7 @@ function install_app {
   <key>CFBundleIconFile</key>
   <string>icon.icns</string>
   <key>CFBundleIdentifier</key>
-  <string>com.scriptwriter.app</string>
+  <string>com.unclebob.scriptwriter</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
