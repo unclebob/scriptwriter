@@ -12,7 +12,13 @@ const USAGE: &str = include_str!("../../usage.txt");
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
-struct ActiveScript(Mutex<Option<PathBuf>>);
+struct ScriptRoots {
+    active: Option<PathBuf>,
+    pending: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct ActiveScript(Mutex<ScriptRoots>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +49,26 @@ async fn choose_script(
         return Ok(None);
     };
     let path = selected.into_path().map_err(|error| error.to_string())?;
-    activate(&state, path).map(Some)
+    let root = canonical_directory(&path)?;
+    let text = read_script(&root)?;
+    state
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.")?
+        .pending = Some(root.clone());
+    Ok(Some(OpenedScript {
+        root: root.to_string_lossy().into_owned(),
+        text,
+    }))
+}
+
+#[tauri::command]
+fn commit_script(state: State<'_, ActiveScript>) -> Result<(), String> {
+    let mut slot = state.0.lock().map_err(|_| "Script state is unavailable.")?;
+    let pending = slot.pending.clone().ok_or("No script is selected.")?;
+    slot.active = Some(pending);
+    slot.pending = None;
+    Ok(())
 }
 
 #[tauri::command]
@@ -85,7 +110,11 @@ async fn export_file(
 fn activate(state: &State<'_, ActiveScript>, root: PathBuf) -> Result<OpenedScript, String> {
     let root = canonical_directory(&root)?;
     let text = read_script(&root)?;
-    *state.0.lock().map_err(|_| "Script state is unavailable.")? = Some(root.clone());
+    state
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.")?
+        .active = Some(root.clone());
     Ok(OpenedScript {
         root: root.to_string_lossy().into_owned(),
         text,
@@ -97,6 +126,7 @@ fn active_root(state: &State<'_, ActiveScript>) -> Result<PathBuf, String> {
         .0
         .lock()
         .map_err(|_| "Script state is unavailable.".to_string())?
+        .active
         .clone()
         .ok_or_else(|| "No script is open.".to_string())
 }
@@ -157,12 +187,25 @@ fn atomic_write_before_commit<F>(path: &Path, bytes: &[u8], before_commit: F) ->
 where
     F: FnOnce(&Path) -> io::Result<()>,
 {
+    commit_write(path, bytes, before_commit, sync_parent)
+}
+
+fn sync_parent(parent: &Path) -> io::Result<()> {
+    File::open(parent)?.sync_all()
+}
+
+fn commit_write<F, S>(path: &Path, bytes: &[u8], before_commit: F, sync_parent: S) -> io::Result<()>
+where
+    F: FnOnce(&Path) -> io::Result<()>,
+    S: FnOnce(&Path) -> io::Result<()>,
+{
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"))?;
     fs::create_dir_all(parent)?;
     let temp = temporary_path(parent, path.file_name().unwrap_or_default());
+    let mut renamed = false;
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -172,12 +215,16 @@ where
         file.sync_all()?;
         before_commit(&temp)?;
         fs::rename(&temp, path)?;
-        File::open(parent)?.sync_all()?;
+        renamed = true;
+        sync_parent(parent)?;
         Ok(())
     })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
+    if renamed {
+        // The new bytes are already the destination file. Failing the command
+        // here would leave the session dirty after the previous file is gone.
+        return Ok(());
     }
+    let _ = fs::remove_file(&temp);
     result
 }
 
@@ -265,6 +312,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_startup_script,
             choose_script,
+            commit_script,
             save_active_script,
             export_file
         ])
@@ -295,6 +343,21 @@ mod tests {
         atomic_write(&file, b"first").unwrap();
         atomic_write(&file, b"second").unwrap();
         assert_eq!(fs::read_to_string(file).unwrap(), "second");
+    }
+
+    #[test]
+    fn directory_sync_failure_keeps_the_written_file() {
+        let dir = temp_dir();
+        let file = dir.join(SCRIPT_FILE);
+        atomic_write(&file, b"valid").unwrap();
+        let result = commit_write(
+            &file,
+            b"second",
+            |_| Ok(()),
+            |_| Err(io::Error::other("sync")),
+        );
+        assert!(result.is_ok());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "second");
     }
 
     #[test]

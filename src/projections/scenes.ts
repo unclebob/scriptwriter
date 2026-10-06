@@ -1,5 +1,5 @@
 import type { DocumentSnapshot, PositionedElement } from "../domain/document";
-import { cueName } from "./completion";
+import { cueName } from "../domain/elements";
 
 export type SceneRow = {
   number: number;

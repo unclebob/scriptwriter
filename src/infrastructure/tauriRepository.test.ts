@@ -16,6 +16,13 @@ describe("native repository adapter", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "save_active_script", { text: "{}" });
   });
 
+  it("commits an opened folder without a renderer path", async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const repository = new TauriScriptRepository();
+    await repository.commitScript();
+    expect(invoke).toHaveBeenCalledWith("commit_script");
+  });
+
   it("passes export bytes to the native save-dialog operation", async () => {
     vi.mocked(invoke).mockResolvedValue(true);
     const repository = new TauriScriptRepository();

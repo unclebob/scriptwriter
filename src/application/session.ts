@@ -29,6 +29,8 @@ export class ScriptSession {
   };
   private timer: Timer | null = null;
   private saving: Promise<void> | null = null;
+  private generation = 0;
+  private holdInput = false;
   private readonly listeners = new Set<(state: SessionState) => void>();
 
   constructor(
@@ -60,12 +62,20 @@ export class ScriptSession {
     await this.flush();
     const selected = await this.repository.chooseScript();
     if (!selected) return false;
-    this.load(selected);
-    return true;
+    this.holdInput = true;
+    try {
+      await this.flush();
+      storedScript(selected.root, selected.text);
+      await this.repository.commitScript();
+      this.load(selected);
+      return true;
+    } finally {
+      this.holdInput = false;
+    }
   }
 
   setDocument(document: DocumentSnapshot): void {
-    if (!this.stateValue.script) return;
+    if (this.holdInput || !this.stateValue.script) return;
     this.setState({ document, revision: this.stateValue.revision + 1, status: "ready", error: null });
     this.schedule();
   }
@@ -77,6 +87,7 @@ export class ScriptSession {
   }
 
   setHeader(field: HeaderField, value: string): void {
+    if (this.holdInput) return;
     const script = this.stateValue.script;
     if (!script || script[field] === value) return;
     this.setState({
@@ -132,6 +143,7 @@ export class ScriptSession {
   }
 
   private load(opened: { root: string; text: string | null }) {
+    this.generation += 1;
     this.clearTimer();
     const script = storedScript(opened.root, opened.text);
     this.stateValue = {
@@ -146,17 +158,20 @@ export class ScriptSession {
   }
 
   private async drain(): Promise<void> {
+    const generation = this.generation;
     try {
-      while (this.stateValue.savedRevision !== this.stateValue.revision) {
+      while (this.generation === generation && this.stateValue.savedRevision !== this.stateValue.revision) {
         const revision = this.stateValue.revision;
         const { script, document } = this.current();
         this.setState({ status: "saving" });
         await this.repository.saveScript(
           serializeScript({ ...script, elements: storableElements(document) }),
         );
+        if (this.generation !== generation) return;
         this.setState({ savedRevision: revision, status: "ready", error: null });
       }
     } catch (error) {
+      if (this.generation !== generation) return;
       this.fail(error);
       throw error;
     }

@@ -47,6 +47,21 @@ describe("PDF export", () => {
     expect(pdf.text).toContain(unicode);
   });
 
+  it("numbers an empty scene heading", async () => {
+    const document = elementsDocument(
+      normalizeElements([
+        { type: "scene", text: "ROOM" },
+        { type: "scene", text: "" },
+      ]),
+    );
+    const pdf = await getDocument({ data: await renderPdf(header, document) }).promise;
+    const page = await pdf.getPage(2);
+    const content = await page.getTextContent();
+    const strings = content.items.map((item) => ("str" in item ? item.str : ""));
+    expect(strings).toContain("ROOM");
+    expect(strings).toContain("2");
+  });
+
   it("reports an unsupported glyph instead of silently replacing it", async () => {
     const document = elementsDocument(normalizeElements([{ type: "action", text: "漢" }]));
     await expect(renderPdf(header, document)).rejects.toThrow(/does not support.*U\+/);

@@ -1,4 +1,5 @@
 import { elementAt, type DocumentSnapshot, type PositionedElement } from "../domain/document";
+import { cueName } from "../domain/elements";
 
 export const TRANSITIONS = [
   "CUT TO:",
@@ -14,10 +15,6 @@ export const TRANSITIONS = [
 export const EXTENSIONS = ["(V.O.)", "(O.S.)", "(O.C.)", "(CONT'D)", "(PRE-LAP)", "(FILTER)"] as const;
 
 export type CompletionList = { from: number; to: number; options: string[] };
-
-export function cueName(visible: string): string {
-  return visible.replace(/\([^)]*\)/g, "").trim();
-}
 
 export function characterNames(document: DocumentSnapshot): string[] {
   const seen = new Set<string>();

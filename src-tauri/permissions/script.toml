@@ -4,6 +4,7 @@ description = "Load and save the active script and export through a native save 
 commands.allow = [
   "load_startup_script",
   "choose_script",
+  "commit_script",
   "save_active_script",
   "export_file",
 ]

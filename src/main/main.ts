@@ -34,6 +34,8 @@ const session = new ScriptSession(new TauriScriptRepository());
 let sceneKey = "";
 let closing = false;
 
+const fields = [titleInput, creditInput, authorInput, draftInput, contactInput];
+
 const editor: ScriptEditor = createEditor(host, [], {
   onChange(document) {
     session.setDocument(document);
@@ -43,6 +45,8 @@ const editor: ScriptEditor = createEditor(host, [], {
     paint(document, cursor);
   },
 });
+editor.setEditable(false);
+setFieldsEnabled(false);
 
 session.subscribe((state) => {
   if (state.error) showWarning(state.error);
@@ -277,10 +281,17 @@ function marginPosition(event: MouseEvent): number | null {
 }
 
 async function chooseScript() {
+  editor.setEditable(false);
+  setFieldsEnabled(false);
   try {
     if (await session.chooseScript()) showLoaded();
   } catch (error) {
     showWarning(message(error));
+  } finally {
+    if (session.state.script) {
+      editor.setEditable(true);
+      setFieldsEnabled(true);
+    }
   }
 }
 
@@ -299,7 +310,13 @@ function showLoaded() {
   if (script.warnings.length > 0) showWarning(script.warnings.join(" "));
   else clearWarnings();
   paint(editor.getDocument(), editor.view.state.selection.main.head);
+  editor.setEditable(true);
+  setFieldsEnabled(true);
   editor.focus();
+}
+
+function setFieldsEnabled(enabled: boolean) {
+  for (const field of fields) field.disabled = !enabled;
 }
 
 async function exportFile(exporter: () => Promise<void>) {
@@ -324,7 +341,9 @@ function paintScenes(document: DocumentSnapshot, cursor: number) {
   for (const item of scenesEl.querySelectorAll<HTMLButtonElement>(".scene")) {
     const from = Number(item.dataset.from);
     const next = nextRowFrom(item);
-    item.classList.toggle("active", cursor >= from && (next === null || cursor < next));
+    const current = cursor >= from && (next === null || cursor < next);
+    if (current) item.setAttribute("aria-current", "true");
+    else item.removeAttribute("aria-current");
   }
 }
 

@@ -146,7 +146,7 @@ A page is US Letter. The type is a Unicode-capable monospaced font at 12 point, 
 | Element | Left edge | Width |
 |---|---|---|
 | Scene Heading, Action, Shot | 1.5 in | 6.0 in |
-| Character | 3.7 in | |
+| Character | 3.7 in | 3.8 in |
 | Dialogue | 2.5 in | 3.5 in |
 | Parenthetical | 3.1 in | 2.5 in |
 | Transition | right edge at 7.5 in | |

@@ -39,6 +39,10 @@ export function blanksBefore(type: ElementType): 0 | 1 {
   return type === "dialogue" || type === "parenthetical" ? 0 : 1;
 }
 
+export function cueName(visible: string): string {
+  return visible.replace(/\([^)]*\)/g, "").trim();
+}
+
 export function returnNext(type: ElementType): ElementType {
   return RETURN_NEXT[type];
 }

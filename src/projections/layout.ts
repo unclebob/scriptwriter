@@ -7,7 +7,7 @@ export const LINES_PER_PAGE = 54;
 const WIDTH: Record<ElementType, number> = {
   scene: 60,
   action: 60,
-  character: 60,
+  character: 38,
   parenthetical: 25,
   dialogue: 35,
   transition: 60,
@@ -62,7 +62,7 @@ export function paginate(document: DocumentSnapshot): Placed[][] {
   const blocks = blocksOf(document);
   const sheet: Sheet = { pages: [[]], used: 0 };
   for (let index = 0; index < blocks.length; index += 1) {
-    placeBlock(sheet, blocks[index], blocks[index + 1] ?? null);
+    placeBlock(sheet, blocks, index);
   }
   return finished(sheet.pages);
 }
@@ -77,14 +77,16 @@ function lastPageEmpty(pages: Placed[][]): boolean {
   return pages[pages.length - 1].length === 0;
 }
 
-function placeBlock(sheet: Sheet, block: Block, next: Block | null) {
-  const blanks = startBlanks(sheet, block, next);
+function placeBlock(sheet: Sheet, blocks: readonly Block[], index: number) {
+  const block = blocks[index];
+  const blanks = startBlanks(sheet, blocks, index);
   writeBlock(sheet, block, block.lines, block.chars, blanks);
 }
 
-function startBlanks(sheet: Sheet, block: Block, next: Block | null): number {
+function startBlanks(sheet: Sheet, blocks: readonly Block[], index: number): number {
+  const block = blocks[index];
   const blanks = breakForAct(sheet, block);
-  if (heldWithNext(sheet, block, next, blanks)) return 0;
+  if (heldWithNext(sheet, blocks, index, blanks)) return 0;
   return blanks;
 }
 
@@ -96,9 +98,11 @@ function breakForAct(sheet: Sheet, block: Block): number {
   return sheet.used === 0 ? 0 : block.blanksBefore;
 }
 
-function heldWithNext(sheet: Sheet, block: Block, next: Block | null, blanks: number): boolean {
+function heldWithNext(sheet: Sheet, blocks: readonly Block[], index: number, blanks: number): boolean {
+  const block = blocks[index];
+  const next = blocks[index + 1] ?? null;
   if (!canHold(sheet, block, next)) return false;
-  if (keepPage(sheet, block, next, blanks)) return false;
+  if (keepPage(sheet, blocks, index, blanks)) return false;
   newPage(sheet);
   return true;
 }
@@ -107,11 +111,20 @@ function canHold(sheet: Sheet, block: Block, next: Block | null): next is Block 
   return keepsWithNext(block.type) && next !== null && sheet.used > 0;
 }
 
-function keepPage(sheet: Sheet, block: Block, next: Block, blanks: number): boolean {
-  const follow = Math.min(2, next.blanksBefore + next.lines.length);
+function keepPage(sheet: Sheet, blocks: readonly Block[], index: number, blanks: number): boolean {
+  const block = blocks[index];
+  const follow = followedLines(blocks, index);
   const group = blanks + block.lines.length + follow;
   const room = LINES_PER_PAGE - sheet.used;
   return group <= room || group > LINES_PER_PAGE;
+}
+
+function followedLines(blocks: readonly Block[], index: number): number {
+  const next = blocks[index + 1];
+  if (!next) return 0;
+  const size = next.blanksBefore + next.lines.length;
+  if (!keepsWithNext(next.type)) return Math.min(2, size);
+  return size + followedLines(blocks, index + 1);
 }
 
 function writeBlock(sheet: Sheet, block: Block, lines: string[], chars: number[], blanks: number) {
@@ -246,8 +259,10 @@ export function pageStarts(pages: readonly Placed[][]): number[] {
   return starts;
 }
 
+const CONTINUED = /\(cont['’]d\)/i;
+
 export function withContd(name: string): string {
-  if (/\(CONT'D\)/.test(name)) return name;
+  if (CONTINUED.test(name)) return name;
   return `${name} (CONT'D)`;
 }
 

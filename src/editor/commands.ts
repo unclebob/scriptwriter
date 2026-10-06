@@ -58,7 +58,7 @@ function breakLine(
   if (parts.left === "") {
     lines[index] = { text: formatText(next, parts.right), type: next };
     const moved = normalizeBlanks(lines, index, next);
-    return result(lines, typingCursor(lines, moved));
+    return result(lines, lineCursor(lines, moved, parts.right.length === 0));
   }
   lines[index].text = formatText(element.type, parts.left);
   return placeLine(lines, index, next, parts.right);
@@ -97,7 +97,7 @@ function cycleType(
 export function insertBefore(document: DocumentSnapshot, cursor: number): Edit {
   const element = elementBeside(document, cursor);
   if (!element) return setElement(document, cursor, "action");
-  const elements = storableElements(document);
+  const elements = document.elements.map(({ type, text, blanksBefore }) => ({ type, text, blanksBefore }));
   elements.splice(element.index, 0, blankElement(element.type));
   const next = snapshot(editorDocument(normalizeElements(elements)), document.revision + 1);
   return { document: next, cursor: typingAt(next.elements[element.index]) };
@@ -147,7 +147,10 @@ export function elementsCovered(
   const start = Math.min(from, to);
   const end = Math.max(from, to);
   if (start === end) return [];
-  return document.elements.filter((element) => element.from < end && element.to > start);
+  return document.elements.filter((element) => {
+    if (element.from === element.to) return element.from >= start && element.from < end;
+    return element.from < end && element.to > start;
+  });
 }
 
 export function elementSelection(
@@ -171,7 +174,6 @@ export function deleteElements(document: DocumentSnapshot, from: number, to: num
   return replaceElements(document, covered[0].index, covered.length, []);
 }
 
-/** Inserts a typed clipboard block without inspecting its text. */
 export function insertElements(
   document: DocumentSnapshot,
   from: number,
@@ -187,7 +189,6 @@ export function insertElements(
   return replaceElements(document, index, 0, incoming);
 }
 
-/** Multiline plain text becomes action elements. Text shape never determines a type. */
 export function insertPlainText(
   document: DocumentSnapshot,
   from: number,
@@ -209,6 +210,101 @@ export function insertPlainText(
   return insertElements(document, from, to, elements);
 }
 
+type TextChange = { from: number; to: number; inserted: string };
+
+export function replaceMatches(
+  document: DocumentSnapshot,
+  changes: readonly TextChange[],
+  fallbackCursor: number,
+): Edit | null {
+  const grouped = new Map<number, TextChange[]>();
+  const ordered = changes
+    .map((change) => ({
+      from: change.from,
+      to: change.to,
+      inserted: change.inserted.replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
+    }))
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  for (const change of ordered) {
+    const element = elementAt(document, change.from);
+    if (!element || change.to > element.to || document.text.slice(change.from, change.to).includes("\n")) continue;
+    const list = grouped.get(element.index) ?? [];
+    list.push(change);
+    grouped.set(element.index, list);
+  }
+  if (grouped.size === 0) return null;
+
+  const built: ScriptElement[] = [];
+  let cursorAt: { index: number; offset: number } | null = null;
+  for (const element of document.elements) {
+    const group = grouped.get(element.index);
+    if (!group) {
+      built.push({ type: element.type, text: element.text, blanksBefore: element.blanksBefore });
+      continue;
+    }
+    const rewritten = spliceText(element.text, element.from, group);
+    const pieces = rewritten.text.split("\n");
+    const start = built.length;
+    pieces.forEach((raw, index) => {
+      built.push({
+        type: element.type,
+        text: formatText(element.type, raw),
+        blanksBefore: index === 0 ? element.blanksBefore : blanksBefore(element.type),
+      });
+    });
+    const located = locateOffset(rewritten.text, rewritten.cursor);
+    const raw = pieces[located.part] ?? "";
+    cursorAt = {
+      index: start + located.part,
+      offset: formattedOffset(element.type, raw, located.offset),
+    };
+  }
+
+  const next = snapshot(editorDocument(normalizeElements(built)), document.revision + 1);
+  const placed = cursorAt;
+  const target = placed ? next.elements[placed.index] : undefined;
+  const cursor = target && placed
+    ? Math.min(target.to, Math.max(target.from, target.from + placed.offset))
+    : fallbackCursor;
+  return { document: next, cursor };
+}
+
+function spliceText(text: string, base: number, changes: readonly TextChange[]): { text: string; cursor: number } {
+  let built = "";
+  let at = 0;
+  let cursor = 0;
+  for (const change of changes) {
+    const start = change.from - base;
+    const end = change.to - base;
+    if (start < at || end > text.length || start > end) continue;
+    built += text.slice(at, start) + change.inserted;
+    cursor = built.length;
+    at = end;
+  }
+  return { text: built + text.slice(at), cursor };
+}
+
+function locateOffset(text: string, cursor: number): { part: number; offset: number } {
+  let part = 0;
+  let offset = cursor;
+  const lines = text.split("\n");
+  for (const line of lines) {
+    if (offset <= line.length) return { part, offset };
+    offset -= line.length + 1;
+    part += 1;
+  }
+  const last = lines.length - 1;
+  return { part: last, offset: lines[last]?.length ?? 0 };
+}
+
+function formattedOffset(type: ElementType, raw: string, offset: number): number {
+  if (type !== "parenthetical") return offset;
+  const formatted = formatText(type, raw);
+  const shift = formatted.startsWith("(") && !raw.startsWith("(") ? 1 : 0;
+  const limit = formatted.endsWith(")") ? Math.max(shift, formatted.length - 1) : formatted.length;
+  return Math.min(Math.max(offset + shift, shift), limit);
+}
+
 export function selectedElements(
   document: DocumentSnapshot,
   from: number,
@@ -221,7 +317,6 @@ export function selectedElements(
   }));
 }
 
-/** Normalize only the explicitly assigned type; never promote based on text. */
 export function afterInput(document: DocumentSnapshot, cursor: number): Edit {
   const element = elementAt(document, cursor);
   if (!element) return unchanged(document, cursor);
@@ -299,7 +394,7 @@ function placeLine(lines: EditableLine[], after: number, type: ElementType, text
   addition.push({ text: formatText(type, text), type });
   const index = after + 1 + blanks;
   lines.splice(after + 1, 0, ...addition);
-  return result(lines, typingCursor(lines, index));
+  return result(lines, lineCursor(lines, index, text.length === 0));
 }
 
 function normalizeBlanks(lines: EditableLine[], index: number, type: ElementType): number {
@@ -354,6 +449,23 @@ function blankElement(type: ElementType): ScriptElement {
 
 function emptyElement(element: PositionedElement): boolean {
   return element.text === "" || (element.type === "parenthetical" && element.text === "()");
+}
+
+function lineCursor(lines: EditableLine[], index: number, empty: boolean): number {
+  const document = snapshot({
+    text: lines.map((line) => line.text).join("\n"),
+    lineTypes: lines.map((line) => line.type),
+  });
+  const element = document.elements.find((item) => item.line === index);
+  if (!element) return 0;
+  return empty ? typingAt(element) : textStart(element);
+}
+
+function textStart(element: PositionedElement): number {
+  if (element.type === "parenthetical" && element.text.startsWith("(")) {
+    return Math.min(element.from + 1, element.to);
+  }
+  return element.from;
 }
 
 function typingCursor(lines: EditableLine[], index: number): number {

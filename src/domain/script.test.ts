@@ -46,6 +46,8 @@ describe("script JSON", () => {
     expect(() => parseScriptJson("[]")).toThrow(/not an object/);
     expect(() => parseScriptJson('{"elements":[{"type":"note","text":"Hi"}]}')).toThrow(/unknown type/);
     expect(() => parseScriptJson('{"elements":[{"type":"action","text":"a\\nb"}]}')).toThrow(/more than one line/);
+    expect(() => parseScriptJson('{"title":"A\\nB"}')).toThrow(/title is more than one line/);
+    expect(parseScriptJson('{"contact":"A\\nB"}').contact).toBe("A\nB");
     expect(() => parseScriptJson('{"elements":[{"type":"action","text":"Hi","blanksBefore":-1}]}')).toThrow(
       /bad blanksBefore/,
     );

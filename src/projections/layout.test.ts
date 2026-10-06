@@ -38,6 +38,29 @@ describe("pagination", () => {
     expect(pages[1][0].text).toBe("BOB (CONT'D)");
     expect(pages.flat().filter((line) => line.role === "dialogue").map((line) => line.text).join(" ")).toBe(speech);
     expect(withContd("BOB (CONT'D)")).toBe("BOB (CONT'D)");
+    expect(withContd("BOB (cont'd)")).toBe("BOB (cont'd)");
+    expect(withContd("BOB (CONT’D)")).toBe("BOB (CONT’D)");
+  });
+
+  it("wraps a character cue inside the right margin", () => {
+    const cue = "A".repeat(40);
+    const pages = paginate(document([{ type: "character", text: cue }]));
+    expect(pages[0][0].text).toHaveLength(38);
+    expect(pages.flat().filter((line) => line.role === "character").map((line) => line.text).join("")).toBe(cue);
+  });
+
+  it("keeps a character cue with the parenthetical and dialogue it introduces", () => {
+    const elements: Omit<ScriptElement, "blanksBefore">[] = Array.from({ length: 26 }, (_, index) => ({
+      type: "action" as const,
+      text: `Line ${index}.`,
+    }));
+    elements.push({ type: "character", text: "BOB" }, { type: "parenthetical", text: "(quietly)" }, { type: "dialogue", text: "Hello." });
+    const pages = paginate(document(elements));
+    const cue = pages.findIndex((page) => page.some((line) => line.text === "BOB"));
+    expect(cue).toBeGreaterThan(0);
+    expect(pages[cue - 1].some((line) => line.text === "BOB")).toBe(false);
+    expect(pages[cue].some((line) => line.text === "(quietly)")).toBe(true);
+    expect(pages[cue].some((line) => line.text === "Hello.")).toBe(true);
   });
 
   it("starts later acts on a new page and maps source positions", () => {

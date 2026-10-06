@@ -10,6 +10,10 @@ export class TauriScriptRepository implements ScriptRepository {
     return invoke("choose_script");
   }
 
+  commitScript(): Promise<void> {
+    return invoke("commit_script");
+  }
+
   saveScript(text: string): Promise<void> {
     return invoke("save_active_script", { text });
   }

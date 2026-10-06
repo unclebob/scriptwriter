@@ -13,8 +13,16 @@ class FakeRepository implements ScriptRepository {
     return this.startup;
   }
 
+  chooseHook: (() => void) | null = null;
+  commits = 0;
+
   async chooseScript(): Promise<OpenedScript | null> {
+    this.chooseHook?.();
     return this.selected;
+  }
+
+  async commitScript(): Promise<void> {
+    this.commits += 1;
   }
 
   async saveScript(text: string): Promise<void> {
@@ -81,6 +89,29 @@ describe("script session", () => {
     session.setHeader("title", "Saved One");
     expect(await session.chooseScript()).toBe(true);
     expect(JSON.parse(repository.saved[0]).title).toBe("Saved One");
+    expect(repository.commits).toBe(1);
     expect(session.state.script?.root).toBe("/two");
+  });
+
+  it("saves an edit made while the open dialog is up before committing the new folder", async () => {
+    const repository = new FakeRepository();
+    const order: string[] = [];
+    repository.selected = { root: "/two", text: JSON.stringify({ title: "Two", elements: [] }) };
+    repository.saveHook = async () => {
+      order.push("save");
+    };
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    repository.chooseHook = () => session.setHeader("title", "While open");
+    const commit = repository.commitScript.bind(repository);
+    repository.commitScript = async () => {
+      order.push("commit");
+      await commit();
+    };
+    expect(await session.chooseScript()).toBe(true);
+    expect(order).toEqual(["save", "commit"]);
+    expect(JSON.parse(repository.saved[0]).title).toBe("While open");
+    expect(session.state.script?.title).toBe("Two");
+    expect(session.needsSave()).toBe(false);
   });
 });

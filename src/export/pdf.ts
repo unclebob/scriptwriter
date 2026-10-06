@@ -70,9 +70,9 @@ function scriptPage(
   const label = String(number);
   drawText(page, label, RIGHT - textWidth(label, fonts), PAGE_HEIGHT - 36, fonts);
   lines.forEach((line, index) => {
-    if (line.role === "blank" || line.text === "") return;
+    if (line.role === "blank") return;
     const y = FIRST_BASELINE - index * LEADING;
-    drawText(page, line.text, xOf(line, fonts), y, fonts);
+    if (line.text !== "") drawText(page, line.text, xOf(line, fonts), y, fonts);
     const sceneNumber = line.source === undefined ? undefined : scenes.get(line.source);
     if (sceneNumber !== undefined) drawSceneNumber(page, sceneNumber, y, fonts);
   });

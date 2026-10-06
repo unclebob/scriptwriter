@@ -1,7 +1,7 @@
-import { acceptCompletion, autocompletion, completionStatus, startCompletion, type CompletionSource } from "@codemirror/autocomplete";
+import { acceptCompletion, autocompletion, completionKeymap, completionStatus, startCompletion, type CompletionSource } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
-import { EditorSelection, EditorState, Prec, Transaction } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Prec, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import {
   editorDocument,
@@ -22,6 +22,7 @@ import {
   insertBefore as insertBeforeEdit,
   insertElements,
   insertPlainText,
+  replaceMatches,
   selectedElements,
   setElement,
   shiftTab,
@@ -53,6 +54,7 @@ export type ScriptEditor = {
   setElements: (elements: readonly ScriptElement[]) => void;
   getDocument: () => DocumentSnapshot;
   focus: () => void;
+  setEditable: (editable: boolean) => void;
   goto: (pos: number) => void;
   insertBefore: (pos: number) => void;
 };
@@ -75,6 +77,9 @@ export function createEditor(
     },
     getDocument: () => documentOf(view.state),
     focus: () => view.focus(),
+    setEditable(editable) {
+      view.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(editable)) });
+    },
     goto(pos) {
       const clipped = Math.max(0, Math.min(pos, view.state.doc.length));
       view.dispatch({ selection: EditorSelection.cursor(clipped), scrollIntoView: true });
@@ -104,17 +109,19 @@ function stateFor(document: EditorDocument): EditorState {
     selection: { anchor },
     extensions: [
       ...metadataExtensions(document),
+      editableCompartment.of(EditorView.editable.of(true)),
       history(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "true" }),
       EditorView.domEventHandlers({ copy: copyElements, paste: pasteElements }),
-      autocompletion({ override: [completeSource], activateOnTyping: true }),
+      autocompletion({ override: [completeSource], activateOnTyping: true, defaultKeymap: false }),
       scriptTheme,
       scriptDecorations,
       normalizeInput,
       Prec.highest(
         keymap.of([
           { key: "Enter", run: onEnter },
+          ...completionKeymap.filter((binding) => binding.key !== "Enter"),
           { key: "Tab", run: onTab },
           { key: "Shift-Tab", run: onShiftTab },
           { key: "Backspace", run: onBackspace },
@@ -161,6 +168,10 @@ const normalizeInput = EditorState.transactionFilter.of((transaction) => {
   if (event.includes("structure.skip") || event.includes("compose")) return transaction;
   const change = singleChange(transaction);
   const before = documentOf(transaction.startState);
+  if (event.includes("input.replace")) {
+    const next = replaceMatches(before, textChanges(transaction), transaction.newSelection.main.head);
+    return next ? editTransaction(transaction, next) : [];
+  }
   if (change && event.includes("input") && change.inserted.includes("\n")) {
     const next = insertPlainText(before, change.from, change.to, change.inserted);
     return next ? editTransaction(transaction, next) : [];
@@ -198,6 +209,16 @@ function snapSelection(transaction: Transaction): Transaction {
   });
 }
 
+const editableCompartment = new Compartment();
+
+function textChanges(transaction: Transaction): { from: number; to: number; inserted: string }[] {
+  const changes: { from: number; to: number; inserted: string }[] = [];
+  transaction.changes.iterChanges((from, to, _fromNew, _toNew, text) => {
+    changes.push({ from, to, inserted: text.toString() });
+  });
+  return changes;
+}
+
 function singleChange(transaction: Transaction): { from: number; to: number; inserted: string } | null {
   let found: { from: number; to: number; inserted: string } | null = null;
   let count = 0;
@@ -227,8 +248,10 @@ const completeSource: CompletionSource = (context) => {
 };
 
 function onEnter(view: EditorView): boolean {
-  if (completionStatus(view.state) === "active") {
-    acceptCompletion(view);
+  if (completionStatus(view.state) === "active" && acceptCompletion(view)) {
+    const document = documentOf(view.state);
+    const cursor = view.state.selection.main.head;
+    if (elementAt(document, cursor)?.type === "character") apply(view, enter(document, cursor));
     offer(view);
     return true;
   }

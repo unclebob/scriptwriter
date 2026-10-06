@@ -122,7 +122,11 @@ function readString(record: Record<string, unknown>, key: string, fallback: stri
   const value = record[key];
   if (value === undefined) return fallback;
   if (typeof value !== "string") throw new Error(`script.json ${key} is not text.`);
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const text = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (key !== "contact" && text.includes("\n")) {
+    throw new Error(`script.json ${key} is more than one line.`);
+  }
+  return text;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

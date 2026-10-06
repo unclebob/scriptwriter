@@ -79,9 +79,7 @@ function buildDecorations(state: Parameters<typeof documentOf>[0]): DecorationSe
   for (const [index, source] of derived.pageStarts.entries()) {
     const at = Math.max(0, Math.min(source, state.doc.length));
     ranges.push(
-      Decoration.widget({ widget: new PageRule(String(index + 2)), side: -1, block: true }).range(
-        state.doc.lineAt(at).from,
-      ),
+      Decoration.widget({ widget: new PageRule(String(index + 2)), side: -1, block: true }).range(at),
     );
   }
   return Decoration.set(ranges, true);

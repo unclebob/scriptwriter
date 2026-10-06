@@ -17,6 +17,7 @@ import {
   insertBefore,
   insertElements,
   insertPlainText,
+  replaceMatches,
   setElement,
   shiftTab,
   structuralEdit,
@@ -86,6 +87,14 @@ describe("typed editing", () => {
       { type: "action", text: "Bob" },
       { type: "action", text: "walks home." },
     ]);
+    expect(edit.document.text.slice(edit.cursor, edit.cursor + 5)).toBe("walks");
+  });
+
+  it("leaves the caret where it is when Return is at the start of an action", () => {
+    const original = doc([{ type: "action", text: "Bob walks home." }]);
+    const edit = enter(original, 0);
+    expect(edit.document.text).toBe("Bob walks home.");
+    expect(edit.cursor).toBe(0);
   });
 
   it("removes empty elements and prevents line joins", () => {
@@ -111,6 +120,13 @@ describe("typed editing", () => {
     });
     const removed = deleteElements(original, original.elements[1].from, original.elements[2].to);
     expect(removed?.document.text).toBe("ROOM");
+    const withEmpty = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "" },
+      { type: "action", text: "Next" },
+    ]);
+    const cleared = deleteElements(withEmpty, withEmpty.elements[1].from, withEmpty.elements[2].to);
+    expect(cleared?.document.text).toBe("ROOM");
   });
 
   it("inserts explicit types before a line and through structured paste", () => {
@@ -120,6 +136,9 @@ describe("typed editing", () => {
     ]);
     const inserted = insertBefore(original, original.elements[1].from);
     expect(next(inserted).elements.map((element) => element.type)).toEqual(["scene", "action", "action"]);
+    const opening = insertBefore(elementsDocument([]), 0);
+    expect(next(opening).elements.map((element) => element.type)).toEqual(["scene", "scene"]);
+    expect(next(opening).elements[0].text).toBe("");
     const pasted = insertElements(original, original.elements[0].from, original.elements[1].to, [
       { type: "character", text: "BOB", blanksBefore: 0 },
       { type: "dialogue", text: "Hello.", blanksBefore: 0 },
@@ -132,6 +151,26 @@ describe("typed editing", () => {
     expect(next(pasted).elements.map((element) => element.type)).toEqual(["action", "action", "action"]);
     expect(next(pasted).elements.map((element) => element.text)).toEqual(["INT. ROOM", "EXT. ROAD", "ACT ONE"]);
     expect(pasted.document.text).toBe("INT. ROOM\nEXT. ROAD\n\nACT ONE");
+  });
+
+  it("replaces text inside each element and formats every line", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+      { type: "scene", text: "HALL" },
+    ]);
+    const [room, , hall] = original.elements;
+    const replaced = replaceMatches(original, [
+      { from: room.from, to: room.to, inserted: "kitchen\nporch" },
+      { from: hall.from, to: hall.to, inserted: "yard" },
+    ], 0);
+    expect(next(replaced!).elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "scene", text: "KITCHEN" },
+      { type: "scene", text: "PORCH" },
+      { type: "action", text: "Wait." },
+      { type: "scene", text: "YARD" },
+    ]);
+    expect(replaceMatches(original, [{ from: 0, to: original.text.length, inserted: "X" }], 0)).toBeNull();
   });
 
   it("can assign an explicit type to the opening element", () => {
