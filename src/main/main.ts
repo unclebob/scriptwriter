@@ -2,6 +2,7 @@ import "./styles.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScriptSession } from "../application/session";
 import { elementAt, type DocumentSnapshot } from "../domain/document";
+import type { Script } from "../domain/script";
 import { ELEMENT_LABEL, ELEMENTS } from "../domain/elements";
 import { TauriScriptRepository } from "../infrastructure/tauriRepository";
 import type { OutlineRow } from "../projections/scenes";
@@ -248,71 +249,163 @@ function openFormatMenu(x: number, y: number) {
 }
 
 function markFormat() {
+  const type = currentType();
+  for (const item of formatMenu.querySelectorAll("button")) markFormatItem(item, type);
+}
+
+function currentType(): string {
   const element = elementAt(editor.getDocument(), editor.view.state.selection.main.head);
-  const type = element?.type ?? "";
-  for (const item of formatMenu.querySelectorAll("button")) {
-    if (!(item instanceof HTMLButtonElement)) continue;
-    const current = type !== "" && item.dataset.element === type;
-    item.classList.toggle("is-current", current);
-    if (current) item.setAttribute("aria-current", "true");
-    else item.removeAttribute("aria-current");
-  }
+  return element ? element.type : "";
+}
+
+function markFormatItem(item: Element, type: string) {
+  if (!(item instanceof HTMLButtonElement)) return;
+  applyFormatMark(item, type);
+}
+
+function applyFormatMark(item: HTMLButtonElement, type: string) {
+  const current = formatCurrent(item, type);
+  item.classList.toggle("is-current", current);
+  setAriaCurrent(item, current);
+}
+
+function formatCurrent(item: HTMLButtonElement, type: string): boolean {
+  return type !== "" && item.dataset.element === type;
+}
+
+function setAriaCurrent(item: HTMLButtonElement, current: boolean) {
+  if (current) item.setAttribute("aria-current", "true");
+  else item.removeAttribute("aria-current");
 }
 
 function inScriptMargin(event: MouseEvent): boolean {
   const box = editor.view.contentDOM.getBoundingClientRect();
-  return event.clientY >= box.top - 2 && event.clientY <= box.bottom + 2 &&
-    (event.clientX < box.left - 1 || event.clientX > box.right + 1);
+  return inVerticalBand(event, box) && outsideLine(event, box);
+}
+
+function inVerticalBand(event: MouseEvent, box: DOMRect): boolean {
+  return event.clientY >= box.top - 2 && event.clientY <= box.bottom + 2;
+}
+
+function outsideLine(event: MouseEvent, box: DOMRect): boolean {
+  return event.clientX < box.left - 1 || event.clientX > box.right + 1;
 }
 
 function marginPosition(event: MouseEvent): number | null {
-  const line = [...editor.view.contentDOM.querySelectorAll(".cm-line")].find((candidate) => {
-    const rect = candidate.getBoundingClientRect();
-    return event.clientY >= rect.top - 1 && event.clientY <= rect.bottom + 1;
-  });
+  const line = lineAtY(editor.view.contentDOM, event.clientY);
   if (!(line instanceof HTMLElement)) return null;
+  return positionOnLine(event, line);
+}
+
+function lineAtY(root: HTMLElement, y: number): Element | undefined {
+  return [...root.querySelectorAll(".cm-line")].find((candidate) => containsY(candidate, y));
+}
+
+function containsY(candidate: Element, y: number): boolean {
+  const rect = candidate.getBoundingClientRect();
+  return y >= rect.top - 1 && y <= rect.bottom + 1;
+}
+
+function positionOnLine(event: MouseEvent, line: HTMLElement): number | null {
   const box = editor.view.contentDOM.getBoundingClientRect();
   const x = Math.min(Math.max(event.clientX, box.left + 1), box.right - 1);
   const pos = editor.view.posAtCoords({ x, y: event.clientY }, false);
   if (pos === null) return null;
-  const found = editor.view.domAtPos(Math.min(Math.max(pos, 0), editor.view.state.doc.length));
-  const element = found.node instanceof Element ? found.node : found.node.parentElement;
-  return element?.closest(".cm-line") === line ? pos : null;
+  return posOnLine(pos, line);
+}
+
+function posOnLine(pos: number, line: HTMLElement): number | null {
+  const found = editor.view.domAtPos(clampPos(pos));
+  return sameLine(nodeElement(found.node), line, pos);
+}
+
+function clampPos(pos: number): number {
+  return Math.min(Math.max(pos, 0), editor.view.state.doc.length);
+}
+
+function nodeElement(node: Node): Element | null {
+  return node instanceof Element ? node : node.parentElement;
+}
+
+function sameLine(element: Element | null, line: HTMLElement, pos: number): number | null {
+  if (!onLine(element, line)) return null;
+  return pos;
+}
+
+function onLine(element: Element | null, line: HTMLElement): boolean {
+  return !!element && element.closest(".cm-line") === line;
 }
 
 async function chooseScript() {
-  editor.setEditable(false);
-  setFieldsEnabled(false);
+  lockEditing();
   try {
-    if (await session.chooseScript()) showLoaded();
+    await openChosen();
   } catch (error) {
     showWarning(message(error));
   } finally {
-    if (session.state.script) {
-      editor.setEditable(true);
-      setFieldsEnabled(true);
-    }
+    restoreEditing();
   }
 }
 
+function lockEditing() {
+  editor.setEditable(false);
+  setFieldsEnabled(false);
+}
+
+async function openChosen() {
+  if (await session.chooseScript()) showLoaded();
+}
+
+function restoreEditing() {
+  if (!session.state.script) return;
+  editor.setEditable(true);
+  setFieldsEnabled(true);
+}
+
 function showLoaded() {
+  const loaded = loadedScript();
+  if (!loaded) return;
+  applyLoaded(loaded);
+}
+
+function loadedScript() {
   const { script, document: loaded } = session.state;
-  if (!script || !loaded) return;
+  if (missingLoaded(script, loaded)) return null;
+  return script;
+}
+
+function missingLoaded(script: object | null, loaded: object | null): boolean {
+  return !script || !loaded;
+}
+
+function applyLoaded(script: Script) {
+  fillHeader(script);
+  editor.setElements(script.elements);
+  session.adoptLoadedDocument(editor.getDocument());
+  sceneKey = "";
+  showScriptWarnings(script.warnings);
+  paint(editor.getDocument(), editor.view.state.selection.main.head);
+  editor.setEditable(true);
+  setFieldsEnabled(true);
+  editor.focus();
+}
+
+function fillHeader(script: Script) {
   titleInput.value = script.title;
   creditInput.value = script.credit;
   authorInput.value = script.author;
   draftInput.value = script.draft;
   contactInput.value = script.contact;
-  document.title = script.title || "Scriptwriter";
-  editor.setElements(script.elements);
-  session.adoptLoadedDocument(editor.getDocument());
-  sceneKey = "";
-  if (script.warnings.length > 0) showWarning(script.warnings.join(" "));
+  document.title = titled(script.title);
+}
+
+function titled(title: string): string {
+  return title || "Scriptwriter";
+}
+
+function showScriptWarnings(warnings: readonly string[]) {
+  if (warnings.length > 0) showWarning(warnings.join(" "));
   else clearWarnings();
-  paint(editor.getDocument(), editor.view.state.selection.main.head);
-  editor.setEditable(true);
-  setFieldsEnabled(true);
-  editor.focus();
 }
 
 function setFieldsEnabled(enabled: boolean) {
@@ -335,16 +428,31 @@ function paint(document: DocumentSnapshot, cursor: number) {
 }
 
 function paintScenes(document: DocumentSnapshot, cursor: number) {
-  const rows = derive(document).outline;
+  refreshOutline(derive(document).outline);
+  markCurrentScene(cursor);
+}
+
+function refreshOutline(rows: readonly OutlineRow[]) {
   const key = rows.map(outlineToken).join("\n");
   if (key !== sceneKey) replaceOutline(rows, key);
-  for (const item of scenesEl.querySelectorAll<HTMLButtonElement>(".scene")) {
-    const from = Number(item.dataset.from);
-    const next = nextRowFrom(item);
-    const current = cursor >= from && (next === null || cursor < next);
-    if (current) item.setAttribute("aria-current", "true");
-    else item.removeAttribute("aria-current");
-  }
+}
+
+function markCurrentScene(cursor: number) {
+  for (const item of scenesEl.querySelectorAll<HTMLButtonElement>(".scene")) markScene(item, cursor);
+}
+
+function markScene(item: HTMLButtonElement, cursor: number) {
+  if (sceneIsCurrent(item, cursor)) item.setAttribute("aria-current", "true");
+  else item.removeAttribute("aria-current");
+}
+
+function sceneIsCurrent(item: HTMLButtonElement, cursor: number): boolean {
+  const from = Number(item.dataset.from);
+  return cursor >= from && beforeNextScene(cursor, nextRowFrom(item));
+}
+
+function beforeNextScene(cursor: number, next: number | null): boolean {
+  return next === null || cursor < next;
 }
 
 function outlineToken(row: OutlineRow): string {
@@ -359,17 +467,29 @@ function replaceOutline(rows: readonly OutlineRow[], key: string) {
 function outlineButton(row: OutlineRow): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = row.kind === "act" ? "scene outline-act" : "scene";
-  button.textContent = row.number === null ? row.text : `${row.number}  ${row.text}`;
+  button.className = outlineClass(row.kind);
+  button.textContent = outlineLabel(row);
   button.dataset.from = String(row.from);
   button.addEventListener("click", () => editor.goto(row.from));
   return button;
 }
 
+function outlineClass(kind: string): string {
+  return kind === "act" ? "scene outline-act" : "scene";
+}
+
+function outlineLabel(row: OutlineRow): string {
+  return row.number === null ? row.text : `${row.number}  ${row.text}`;
+}
+
 function nextRowFrom(button: HTMLButtonElement): number | null {
   const next = button.nextElementSibling;
   if (!(next instanceof HTMLButtonElement)) return null;
-  const from = Number(next.dataset.from);
+  return finiteFrom(next.dataset.from);
+}
+
+function finiteFrom(value: string | undefined): number | null {
+  const from = Number(value);
   return Number.isFinite(from) ? from : null;
 }
 

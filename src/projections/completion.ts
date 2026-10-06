@@ -31,17 +31,35 @@ export function characterNames(document: DocumentSnapshot): string[] {
 
 /** The other person in the current scene, once two characters have spoken. */
 export function otherSpeaker(document: DocumentSnapshot, before: number): string | null {
+  return earlierSpeaker(speakersBefore(document, before));
+}
+
+function speakersBefore(document: DocumentSnapshot, before: number): string[] {
   const names: string[] = [];
   for (const element of document.elements) {
     if (element.from >= before) break;
-    if (element.type === "scene" || element.type === "act") names.length = 0;
-    if (element.type === "character") {
-      const name = cueName(element.text);
-      if (name) names.push(name);
-    }
+    if (resetsSpeakers(element.type)) names.length = 0;
+    rememberSpeaker(names, element);
   }
+  return names;
+}
+
+function resetsSpeakers(type: string): boolean {
+  return type === "scene" || type === "act";
+}
+
+function rememberSpeaker(names: string[], element: PositionedElement) {
+  if (element.type !== "character") return;
+  const name = cueName(element.text);
+  if (name) names.push(name);
+}
+
+function earlierSpeaker(names: readonly string[]): string | null {
   if (names.length < 2) return null;
-  const last = names[names.length - 1];
+  return differentFromLast(names, names[names.length - 1]);
+}
+
+function differentFromLast(names: readonly string[], last: string): string | null {
   for (let index = names.length - 2; index >= 0; index -= 1) {
     if (names[index] !== last) return names[index];
   }

@@ -127,6 +127,13 @@ describe("typed editing", () => {
     ]);
     const cleared = deleteElements(withEmpty, withEmpty.elements[1].from, withEmpty.elements[2].to);
     expect(cleared?.document.text).toBe("ROOM");
+    const everything = doc([
+      { type: "action", text: "One" },
+      { type: "action", text: "Two" },
+    ]);
+    const gone = deleteElements(everything, 0, everything.text.length);
+    expect(gone?.document.text).toBe("");
+    expect(gone?.cursor).toBe(0);
   });
 
   it("inserts explicit types before a line and through structured paste", () => {
@@ -171,6 +178,54 @@ describe("typed editing", () => {
       { type: "scene", text: "YARD" },
     ]);
     expect(replaceMatches(original, [{ from: 0, to: original.text.length, inserted: "X" }], 0)).toBeNull();
+  });
+
+  it("stays in the speech that already follows a cue", () => {
+    const original = doc([
+      { type: "character", text: "BOB" },
+      { type: "dialogue", text: "Hello." },
+    ]);
+    const stayed = enter(original, original.elements[0].to);
+    expect(stayed.document.text).toBe(original.text);
+    expect(stayed.cursor).toBe(original.elements[1].to);
+
+    const aside = doc([
+      { type: "character", text: "BOB" },
+      { type: "parenthetical", text: "(quietly)" },
+      { type: "dialogue", text: "Hello." },
+    ]);
+    const intoParen = enter(aside, aside.elements[0].to);
+    expect(intoParen.document.text).toBe(aside.text);
+    const paren = aside.elements[1];
+    expect(intoParen.cursor).toBe(paren.from + paren.text.lastIndexOf(")"));
+  });
+
+  it("continues from the element above a blank line", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+    ]);
+    const blank = original.elements[0].to + 1;
+    const continued = tab(original, blank);
+    expect(next(continued).elements[0]).toMatchObject({ type: "action", text: "ROOM" });
+  });
+
+  it("keeps parentheses when replacing parenthetical text", () => {
+    const original = doc([{ type: "parenthetical", text: "(quietly)" }]);
+    const element = original.elements[0];
+    const inner = replaceMatches(
+      original,
+      [{ from: element.from + 1, to: element.from + 6, inserted: "soft" }],
+      0,
+    );
+    expect(inner?.document.text).toBe("(softly)");
+    const whole = replaceMatches(
+      original,
+      [{ from: element.from, to: element.to, inserted: "softly" }],
+      0,
+    );
+    expect(whole?.document.text).toBe("(softly)");
+    expect(whole?.cursor).toBe(7);
   });
 
   it("can assign an explicit type to the opening element", () => {

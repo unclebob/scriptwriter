@@ -59,10 +59,6 @@ export function isElementType(value: string): value is ElementType {
   return (ELEMENTS as readonly string[]).includes(value);
 }
 
-export function isSpeech(type: ElementType | null): boolean {
-  return type === "character" || type === "parenthetical" || type === "dialogue";
-}
-
 export function formatText(type: ElementType, text: string): string {
   if (type === "parenthetical") return parenthesized(text);
   if (type === "scene" || type === "character" || type === "transition" || type === "shot" || type === "act") {

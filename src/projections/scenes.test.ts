@@ -60,5 +60,12 @@ describe("scene projection", () => {
     expect(csv).toContain("INT. KITCHEN - DAY,1,1,ACT ONE");
     expect(csv).toContain("'=1+1");
     expect(csv).toContain("'@MAL");
+    const untitled = scenes(document([
+      { type: "scene", text: "" },
+      { type: "scene", text: "ROOM" },
+      { type: "scene", text: "room" },
+    ]));
+    const locations = scenesCsv(untitled).trim().split("\n").slice(1).map((line) => line.split(",")[0]);
+    expect(locations).toEqual(["ROOM", "room", ""]);
   });
 });

@@ -18,6 +18,15 @@ describe("completion", () => {
     const current = talk.elements.at(-1)!;
     expect(otherSpeaker(talk, current.from)).toBe("ALICE");
     expect(completions(talk, current.from)?.options).toEqual(["ALICE", "BOB"]);
+    const solo = elementsDocument(
+      normalizeElements([
+        { type: "character", text: "BOB" },
+        { type: "dialogue", text: "Hi." },
+        { type: "character", text: "BOB" },
+        { type: "character", text: "" },
+      ]),
+    );
+    expect(otherSpeaker(solo, solo.elements.at(-1)!.from)).toBeNull();
   });
 
   it("offers character extensions and explicit transitions", () => {

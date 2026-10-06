@@ -106,18 +106,35 @@ export function insertBefore(document: DocumentSnapshot, cursor: number): Edit {
 export function setElement(document: DocumentSnapshot, cursor: number, type: ElementType): Edit {
   const element = elementAt(document, cursor);
   if (element) return convertLine(document, element, type, cursor);
+  return setEmptyLine(document, cursor, type);
+}
+
+function setEmptyLine(document: DocumentSnapshot, cursor: number, type: ElementType): Edit {
   const line = lineAt(document, cursor);
-  if (line.type === null && document.elements.length > 0) return unchanged(document, cursor);
+  if (separatorLine(line.type, document.elements.length)) return unchanged(document, cursor);
   const lines = editableLines(document);
   lines[line.number] = { text: formatText(type, line.text), type };
   const moved = normalizeBlanks(lines, line.number, type);
   return result(lines, typingCursor(lines, moved));
 }
 
+function separatorLine(type: LineType, elements: number): boolean {
+  return type === null && elements > 0;
+}
+
 /** Removes an empty element. Returns null when Backspace should delete a character. */
 export function backspace(document: DocumentSnapshot, cursor: number): Edit | null {
   const element = elementAt(document, cursor);
-  if (!element) return lineAt(document, cursor).type === null ? unchanged(document, cursor) : null;
+  if (!element) return backspaceBlank(document, cursor);
+  return backspaceElement(document, element, cursor);
+}
+
+function backspaceBlank(document: DocumentSnapshot, cursor: number): Edit | null {
+  if (lineAt(document, cursor).type === null) return unchanged(document, cursor);
+  return null;
+}
+
+function backspaceElement(document: DocumentSnapshot, element: PositionedElement, cursor: number): Edit | null {
   if (emptyElement(element)) return removeElement(document, element);
   if (cursor <= element.from) return unchanged(document, cursor);
   return null;
@@ -160,11 +177,22 @@ export function elementSelection(
 ): { anchor: number; head: number } | null {
   const covered = elementsCovered(document, anchor, head);
   if (covered.length < 2) return null;
+  return widenedSelection(covered, anchor, head);
+}
+
+function widenedSelection(
+  covered: readonly PositionedElement[],
+  anchor: number,
+  head: number,
+): { anchor: number; head: number } | null {
   const from = covered[0].from;
   const to = covered[covered.length - 1].to;
-  const forward = head >= anchor;
-  const next = { anchor: forward ? from : to, head: forward ? to : from };
-  return next.anchor === anchor && next.head === head ? null : next;
+  const next = head >= anchor ? { anchor: from, head: to } : { anchor: to, head: from };
+  return sameSelection(next, anchor, head) ? null : next;
+}
+
+function sameSelection(next: { anchor: number; head: number }, anchor: number, head: number): boolean {
+  return next.anchor === anchor && next.head === head;
 }
 
 /** Removes every element the range touches, when that is more than one. */
@@ -183,10 +211,22 @@ export function insertElements(
   if (incoming.length === 0) return unchanged(document, from);
   const covered = elementsCovered(document, from, to);
   if (covered.length >= 2) return replaceElements(document, covered[0].index, covered.length, incoming);
+  return insertAround(document, from, to, incoming);
+}
+
+function insertAround(
+  document: DocumentSnapshot,
+  from: number,
+  to: number,
+  incoming: readonly ScriptElement[],
+): Edit {
   if (isOpeningPlaceholder(document)) return replaceElements(document, 0, 1, incoming);
   const host = elementAt(document, from) ?? previousElement(document, Math.max(from, to));
-  const index = host ? host.index + 1 : 0;
-  return replaceElements(document, index, 0, incoming);
+  return replaceElements(document, insertionIndex(host), 0, incoming);
+}
+
+function insertionIndex(host: PositionedElement | null): number {
+  return host ? host.index + 1 : 0;
 }
 
 export function insertPlainText(
@@ -217,56 +257,117 @@ export function replaceMatches(
   changes: readonly TextChange[],
   fallbackCursor: number,
 ): Edit | null {
+  const grouped = groupChanges(document, changes);
+  if (grouped.size === 0) return null;
+  const built: ScriptElement[] = [];
+  let cursorAt: { index: number; offset: number } | null = null;
+  for (const element of document.elements) {
+    cursorAt = applyGroup(element, grouped.get(element.index), built) ?? cursorAt;
+  }
+  return replacedDocument(document, built, cursorAt, fallbackCursor);
+}
+
+function groupChanges(document: DocumentSnapshot, changes: readonly TextChange[]): Map<number, TextChange[]> {
   const grouped = new Map<number, TextChange[]>();
-  const ordered = changes
-    .map((change) => ({
-      from: change.from,
-      to: change.to,
-      inserted: change.inserted.replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
-    }))
-    .sort((left, right) => left.from - right.from || left.to - right.to);
-  for (const change of ordered) {
-    const element = elementAt(document, change.from);
-    if (!element || change.to > element.to || document.text.slice(change.from, change.to).includes("\n")) continue;
+  for (const change of changes.map(normalizeChange).sort(byPosition)) {
+    const element = elementHolding(document, change);
+    if (!element) continue;
     const list = grouped.get(element.index) ?? [];
     list.push(change);
     grouped.set(element.index, list);
   }
-  if (grouped.size === 0) return null;
+  return grouped;
+}
 
-  const built: ScriptElement[] = [];
-  let cursorAt: { index: number; offset: number } | null = null;
-  for (const element of document.elements) {
-    const group = grouped.get(element.index);
-    if (!group) {
-      built.push({ type: element.type, text: element.text, blanksBefore: element.blanksBefore });
-      continue;
-    }
-    const rewritten = spliceText(element.text, element.from, group);
-    const pieces = rewritten.text.split("\n");
-    const start = built.length;
-    pieces.forEach((raw, index) => {
-      built.push({
-        type: element.type,
-        text: formatText(element.type, raw),
-        blanksBefore: index === 0 ? element.blanksBefore : blanksBefore(element.type),
-      });
-    });
-    const located = locateOffset(rewritten.text, rewritten.cursor);
-    const raw = pieces[located.part] ?? "";
-    cursorAt = {
-      index: start + located.part,
-      offset: formattedOffset(element.type, raw, located.offset),
-    };
+function normalizeChange(change: TextChange): TextChange {
+  return {
+    from: change.from,
+    to: change.to,
+    inserted: change.inserted.replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
+  };
+}
+
+function byPosition(left: TextChange, right: TextChange): number {
+  return left.from - right.from || left.to - right.to;
+}
+
+function elementHolding(document: DocumentSnapshot, change: TextChange): PositionedElement | null {
+  const element = elementAt(document, change.from);
+  if (!insideElement(element, document, change)) return null;
+  return element;
+}
+
+function insideElement(
+  element: PositionedElement | null,
+  document: DocumentSnapshot,
+  change: TextChange,
+): element is PositionedElement {
+  if (!element || change.to > element.to) return false;
+  return !document.text.slice(change.from, change.to).includes("\n");
+}
+
+function applyGroup(
+  element: PositionedElement,
+  group: TextChange[] | undefined,
+  built: ScriptElement[],
+): { index: number; offset: number } | null {
+  if (!group) {
+    built.push({ type: element.type, text: element.text, blanksBefore: element.blanksBefore });
+    return null;
   }
+  return rewriteElement(element, group, built);
+}
 
+function rewriteElement(
+  element: PositionedElement,
+  group: readonly TextChange[],
+  built: ScriptElement[],
+): { index: number; offset: number } {
+  const rewritten = spliceText(element.text, element.from, group);
+  const pieces = rewritten.text.split("\n");
+  const start = built.length;
+  pieces.forEach((raw, index) => pushPiece(built, element, raw, index));
+  const located = locateOffset(rewritten.text, rewritten.cursor);
+  return {
+    index: start + located.part,
+    offset: formattedOffset(element.type, pieceAt(pieces, located.part), located.offset),
+  };
+}
+
+function pieceAt(pieces: readonly string[], part: number): string {
+  return pieces[part] ?? "";
+}
+
+function pushPiece(built: ScriptElement[], element: PositionedElement, raw: string, index: number) {
+  built.push({
+    type: element.type,
+    text: formatText(element.type, raw),
+    blanksBefore: pieceBlank(element, index),
+  });
+}
+
+function pieceBlank(element: PositionedElement, index: number): 0 | 1 {
+  return index === 0 ? element.blanksBefore : blanksBefore(element.type);
+}
+
+function replacedDocument(
+  document: DocumentSnapshot,
+  built: readonly ScriptElement[],
+  placed: { index: number; offset: number } | null,
+  fallbackCursor: number,
+): Edit {
   const next = snapshot(editorDocument(normalizeElements(built)), document.revision + 1);
-  const placed = cursorAt;
+  return { document: next, cursor: replacedCursor(next, placed, fallbackCursor) };
+}
+
+function replacedCursor(
+  next: DocumentSnapshot,
+  placed: { index: number; offset: number } | null,
+  fallbackCursor: number,
+): number {
   const target = placed ? next.elements[placed.index] : undefined;
-  const cursor = target && placed
-    ? Math.min(target.to, Math.max(target.from, target.from + placed.offset))
-    : fallbackCursor;
-  return { document: next, cursor };
+  if (!target || !placed) return fallbackCursor;
+  return Math.min(target.to, Math.max(target.from, target.from + placed.offset));
 }
 
 function spliceText(text: string, base: number, changes: readonly TextChange[]): { text: string; cursor: number } {
@@ -299,10 +400,22 @@ function locateOffset(text: string, cursor: number): { part: number; offset: num
 
 function formattedOffset(type: ElementType, raw: string, offset: number): number {
   if (type !== "parenthetical") return offset;
-  const formatted = formatText(type, raw);
-  const shift = formatted.startsWith("(") && !raw.startsWith("(") ? 1 : 0;
-  const limit = formatted.endsWith(")") ? Math.max(shift, formatted.length - 1) : formatted.length;
-  return Math.min(Math.max(offset + shift, shift), limit);
+  return parentheticalOffset(raw, offset);
+}
+
+function parentheticalOffset(raw: string, offset: number): number {
+  const formatted = formatText("parenthetical", raw);
+  const shift = openingShift(formatted, raw);
+  return Math.min(Math.max(offset + shift, shift), parenLimit(formatted, shift));
+}
+
+function openingShift(formatted: string, raw: string): number {
+  return formatted.startsWith("(") && !raw.startsWith("(") ? 1 : 0;
+}
+
+function parenLimit(formatted: string, shift: number): number {
+  if (!formatted.endsWith(")")) return formatted.length;
+  return Math.max(shift, formatted.length - 1);
 }
 
 export function selectedElements(
@@ -351,13 +464,27 @@ function insertAfter(
   type: ElementType,
   text: string,
 ): Edit {
-  const touching = document.elements[element.index + 1];
-  if (touching && touching.blanksBefore === 0 && text === "") {
-    if (touching.type === type || (type === "dialogue" && touching.type === "parenthetical")) {
-      return unchanged(document, typingAt(touching));
-    }
-  }
+  const touching = continuedLine(document.elements[element.index + 1], type, text);
+  if (touching) return unchanged(document, typingAt(touching));
   return placeLine(editableLines(document), element.line, type, text);
+}
+
+function continuedLine(
+  touching: PositionedElement | undefined,
+  type: ElementType,
+  text: string,
+): PositionedElement | null {
+  if (!openRun(touching, text)) return null;
+  return acceptsNext(touching, type) ? touching : null;
+}
+
+function openRun(touching: PositionedElement | undefined, text: string): touching is PositionedElement {
+  return !!touching && touching.blanksBefore === 0 && text === "";
+}
+
+function acceptsNext(touching: PositionedElement, type: ElementType): boolean {
+  if (touching.type === type) return true;
+  return type === "dialogue" && touching.type === "parenthetical";
 }
 
 function removeElement(document: DocumentSnapshot, element: PositionedElement): Edit {
@@ -371,20 +498,44 @@ function replaceElements(
   incoming: readonly ScriptElement[],
 ): Edit {
   const elements = storableElements(document);
-  const clean = normalizeElements(incoming).map((element, offset) => ({
+  elements.splice(index, count, ...storedIncoming(incoming, index));
+  return finishReplace(document, elements, index, incoming.length);
+}
+
+function storedIncoming(incoming: readonly ScriptElement[], index: number): ScriptElement[] {
+  return normalizeElements(incoming).map((element, offset) => ({
     ...element,
-    blanksBefore: offset === 0 && index > 0 ? blanksBefore(element.type) : element.blanksBefore,
+    blanksBefore: keptBlank(element, offset, index),
   }));
-  elements.splice(index, count, ...clean);
+}
+
+function keptBlank(element: ScriptElement, offset: number, index: number): 0 | 1 {
+  if (offset === 0 && index > 0) return blanksBefore(element.type);
+  return element.blanksBefore;
+}
+
+function finishReplace(document: DocumentSnapshot, elements: ScriptElement[], index: number, incoming: number): Edit {
   const nextDocument = editorDocument(normalizeElements(elements));
   const next = snapshot(nextDocument, document.revision + 1);
-  if (incoming.length > 0) {
-    const last = next.elements[index + incoming.length - 1];
-    return { document: nextDocument, cursor: last ? last.to : 0 };
-  }
-  const previous = next.elements[index - 1];
-  const following = next.elements[index];
-  return { document: nextDocument, cursor: previous?.to ?? following?.from ?? 0 };
+  if (incoming > 0) return { document: nextDocument, cursor: insertedEnd(next, index, incoming) };
+  return { document: nextDocument, cursor: cursorAfterRemoval(next, index) };
+}
+
+function insertedEnd(next: DocumentSnapshot, index: number, incoming: number): number {
+  const last = next.elements[index + incoming - 1];
+  return last ? last.to : 0;
+}
+
+function cursorAfterRemoval(next: DocumentSnapshot, index: number): number {
+  return elementEnd(next.elements[index - 1]) ?? elementStart(next.elements[index]);
+}
+
+function elementEnd(element: PositionedElement | undefined): number | undefined {
+  return element?.to;
+}
+
+function elementStart(element: PositionedElement | undefined): number {
+  return element?.from ?? 0;
 }
 
 function placeLine(lines: EditableLine[], after: number, type: ElementType, text: string): Edit {
@@ -399,18 +550,30 @@ function placeLine(lines: EditableLine[], after: number, type: ElementType, text
 
 function normalizeBlanks(lines: EditableLine[], index: number, type: ElementType): number {
   const want = index === 0 ? 0 : blanksBefore(type);
+  return adjustSeparators(lines, index, separatorCount(lines, index), want);
+}
+
+function separatorCount(lines: readonly EditableLine[], index: number): number {
   let count = 0;
   for (let at = index - 1; at >= 0 && lines[at].type === null; at -= 1) count += 1;
-  if (count > want) {
-    lines.splice(index - count, count - want);
-    return index - (count - want);
-  }
-  if (count < want) {
-    const blanks = Array.from({ length: want - count }, () => ({ text: "", type: null as LineType }));
-    lines.splice(index, 0, ...blanks);
-    return index + blanks.length;
-  }
+  return count;
+}
+
+function adjustSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
+  if (count > want) return dropSeparators(lines, index, count, want);
+  if (count < want) return addSeparators(lines, index, count, want);
   return index;
+}
+
+function dropSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
+  lines.splice(index - count, count - want);
+  return index - (count - want);
+}
+
+function addSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
+  const blanks = Array.from({ length: want - count }, () => ({ text: "", type: null as LineType }));
+  lines.splice(index, 0, ...blanks);
+  return index + blanks.length;
 }
 
 function result(lines: EditableLine[], cursor: number): Edit {

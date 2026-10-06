@@ -281,18 +281,20 @@ function onShiftTab(view: EditorView): boolean {
 }
 
 function onBackspace(view: EditorView): boolean {
-  const selection = view.state.selection.main;
-  if (!selection.empty) return removeCovered(view);
-  const next = backspace(documentOf(view.state), selection.head);
-  if (!next) return false;
-  apply(view, next);
-  return true;
+  if (coveredSelection(view)) return removeCovered(view);
+  return applyEdit(view, backspace(documentOf(view.state), view.state.selection.main.head));
 }
 
 function onDelete(view: EditorView): boolean {
-  const selection = view.state.selection.main;
-  if (!selection.empty) return removeCovered(view);
-  const next = deleteForward(documentOf(view.state), selection.head);
+  if (coveredSelection(view)) return removeCovered(view);
+  return applyEdit(view, deleteForward(documentOf(view.state), view.state.selection.main.head));
+}
+
+function coveredSelection(view: EditorView): boolean {
+  return !view.state.selection.main.empty;
+}
+
+function applyEdit(view: EditorView, next: Edit | null): boolean {
   if (!next) return false;
   apply(view, next);
   return true;
@@ -349,53 +351,99 @@ function offer(view: EditorView) {
 }
 
 function copyElements(event: ClipboardEvent, view: EditorView): boolean {
-  const selection = view.state.selection.main;
-  if (selection.empty || !event.clipboardData) return false;
-  const document = documentOf(view.state);
-  const elements = selectedElements(document, selection.from, selection.to);
-  if (elements.length < 2) return false;
-  event.clipboardData.setData("text/plain", document.text.slice(selection.from, selection.to));
-  event.clipboardData.setData("application/x-scriptwriter-elements+json", JSON.stringify(elements));
+  if (!writeCopy(event, view)) return false;
   event.preventDefault();
   return true;
 }
 
-function pasteElements(event: ClipboardEvent, view: EditorView): boolean {
-  if (!event.clipboardData) return false;
+function writeCopy(event: ClipboardEvent, view: EditorView): boolean {
+  const data = event.clipboardData;
   const selection = view.state.selection.main;
-  const document = documentOf(view.state);
-  const encoded = event.clipboardData.getData("application/x-scriptwriter-elements+json");
-  const structured = parseClipboardElements(encoded);
-  const next = structured
-    ? insertElements(document, selection.from, selection.to, structured)
-    : insertPlainText(document, selection.from, selection.to, event.clipboardData.getData("text/plain"));
+  if (!copyable(selection, data)) return false;
+  return storeElements(data, documentOf(view.state), selection.from, selection.to);
+}
+
+function copyable(selection: { empty: boolean }, data: DataTransfer | null): data is DataTransfer {
+  return !selection.empty && data !== null;
+}
+
+function storeElements(data: DataTransfer, document: DocumentSnapshot, from: number, to: number): boolean {
+  const elements = selectedElements(document, from, to);
+  if (elements.length < 2) return false;
+  data.setData("text/plain", document.text.slice(from, to));
+  data.setData(ELEMENT_CLIPBOARD, JSON.stringify(elements));
+  return true;
+}
+
+function pasteElements(event: ClipboardEvent, view: EditorView): boolean {
+  const next = pastedEdit(event, view);
   if (!next) return false;
   event.preventDefault();
   apply(view, next);
   return true;
 }
 
+function pastedEdit(event: ClipboardEvent, view: EditorView): Edit | null {
+  const data = event.clipboardData;
+  if (!data) return null;
+  const selection = view.state.selection.main;
+  const document = documentOf(view.state);
+  return pastedElements(document, selection.from, selection.to, data);
+}
+
+function pastedElements(document: DocumentSnapshot, from: number, to: number, data: DataTransfer): Edit | null {
+  const structured = parseClipboardElements(data.getData(ELEMENT_CLIPBOARD));
+  if (structured) return insertElements(document, from, to, structured);
+  return insertPlainText(document, from, to, data.getData("text/plain"));
+}
+
+const ELEMENT_CLIPBOARD = "application/x-scriptwriter-elements+json";
+
 function parseClipboardElements(encoded: string): ScriptElement[] | null {
   if (!encoded) return null;
+  const value = clipboardJson(encoded);
+  if (!Array.isArray(value)) return null;
+  return clipboardList(value);
+}
+
+function clipboardJson(encoded: string): unknown {
   try {
-    const value: unknown = JSON.parse(encoded);
-    if (!Array.isArray(value)) return null;
-    const elements: ScriptElement[] = [];
-    for (const item of value) {
-      if (typeof item !== "object" || item === null) return null;
-      const candidate = item as Record<string, unknown>;
-      if (typeof candidate.type !== "string" || !isElementType(candidate.type)) return null;
-      if (typeof candidate.text !== "string" || candidate.text.includes("\n")) return null;
-      elements.push({
-        type: candidate.type,
-        text: candidate.text,
-        blanksBefore: candidate.blanksBefore === 0 ? 0 : 1,
-      });
-    }
-    return elements;
+    return JSON.parse(encoded);
   } catch {
     return null;
   }
+}
+
+function clipboardList(value: unknown[]): ScriptElement[] | null {
+  const elements: ScriptElement[] = [];
+  for (const item of value) {
+    const element = clipboardElement(item);
+    if (!element) return null;
+    elements.push(element);
+  }
+  return elements;
+}
+
+function clipboardElement(item: unknown): ScriptElement | null {
+  if (!clipboardRecord(item)) return null;
+  return clipboardFields(item);
+}
+
+function clipboardRecord(item: unknown): item is Record<string, unknown> {
+  return typeof item === "object" && item !== null;
+}
+
+function clipboardFields(item: Record<string, unknown>): ScriptElement | null {
+  if (!clipboardType(item.type) || !clipboardText(item.text)) return null;
+  return { type: item.type, text: item.text, blanksBefore: item.blanksBefore === 0 ? 0 : 1 };
+}
+
+function clipboardType(value: unknown): value is ElementType {
+  return typeof value === "string" && isElementType(value);
+}
+
+function clipboardText(value: unknown): value is string {
+  return typeof value === "string" && !value.includes("\n");
 }
 
 export function findInScript(editor: ScriptEditor) {

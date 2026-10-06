@@ -29,10 +29,14 @@ struct OpenedScript {
 
 #[tauri::command]
 fn load_startup_script(state: State<'_, ActiveScript>) -> Result<OpenedScript, String> {
-    let root = script_from_args()?
+    activate(&state, startup_root()?)
+}
+
+fn startup_root() -> Result<PathBuf, String> {
+    let chosen = script_from_args()?;
+    chosen
         .or_else(spec_script_path)
-        .ok_or_else(|| "Open a script.".to_string())?;
-    activate(&state, root)
+        .ok_or_else(|| "Open a script.".to_string())
 }
 
 #[tauri::command]
@@ -40,41 +44,75 @@ async fn choose_script(
     app: AppHandle,
     state: State<'_, ActiveScript>,
 ) -> Result<Option<OpenedScript>, String> {
-    let selected = app
+    stage_script(&state, picked_folder(&app))
+}
+
+fn picked_folder(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    let Some(selected) = app
         .dialog()
         .file()
         .set_title("Open Script")
-        .blocking_pick_folder();
-    let Some(selected) = selected else {
+        .blocking_pick_folder()
+    else {
         return Ok(None);
     };
-    let path = selected.into_path().map_err(|error| error.to_string())?;
-    let root = canonical_directory(&path)?;
+    selected
+        .into_path()
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+fn stage_script(
+    slot: &ActiveScript,
+    picked: Result<Option<PathBuf>, String>,
+) -> Result<Option<OpenedScript>, String> {
+    let Some(path) = picked? else {
+        return Ok(None);
+    };
+    let opened = open_script(path)?;
+    store_pending(slot, &opened)?;
+    Ok(Some(opened))
+}
+
+fn open_script(root: PathBuf) -> Result<OpenedScript, String> {
+    let root = canonical_directory(&root)?;
     let text = read_script(&root)?;
-    state
-        .0
-        .lock()
-        .map_err(|_| "Script state is unavailable.")?
-        .pending = Some(root.clone());
-    Ok(Some(OpenedScript {
+    Ok(OpenedScript {
         root: root.to_string_lossy().into_owned(),
         text,
-    }))
+    })
+}
+
+fn store_pending(slot: &ActiveScript, opened: &OpenedScript) -> Result<(), String> {
+    slot.0
+        .lock()
+        .map_err(|_| "Script state is unavailable.")?
+        .pending = Some(PathBuf::from(&opened.root));
+    Ok(())
 }
 
 #[tauri::command]
 fn commit_script(state: State<'_, ActiveScript>) -> Result<(), String> {
-    let mut slot = state.0.lock().map_err(|_| "Script state is unavailable.")?;
-    let pending = slot.pending.clone().ok_or("No script is selected.")?;
-    slot.active = Some(pending);
-    slot.pending = None;
+    promote(&state)
+}
+
+fn promote(slot: &ActiveScript) -> Result<(), String> {
+    let mut roots = slot.0.lock().map_err(|_| "Script state is unavailable.")?;
+    let pending = roots
+        .pending
+        .take()
+        .ok_or("No script is selected.".to_string())?;
+    roots.active = Some(pending);
     Ok(())
 }
 
 #[tauri::command]
 fn save_active_script(state: State<'_, ActiveScript>, text: String) -> Result<(), String> {
-    let root = active_root(&state)?;
-    validate_root(&root)?;
+    save_script(&active_root(&state)?, &text)
+}
+
+fn save_script(root: &Path, text: &str) -> Result<(), String> {
+    validate_root(root)?;
     let path = root.join(SCRIPT_FILE);
     reject_symlink(&path)?;
     atomic_write(&path, text.as_bytes()).map_err(|error| error.to_string())
@@ -88,37 +126,87 @@ async fn export_file(
     extension: String,
     bytes: Vec<u8>,
 ) -> Result<bool, String> {
-    let (label, extension) = export_kind(&extension)?;
+    let kind = export_kind(&extension)?;
+    save_picked(pick_export(&app, &state, &suggested_name, kind), &bytes)
+}
+
+fn pick_export(
+    app: &AppHandle,
+    slot: &ActiveScript,
+    suggested_name: &str,
+    kind: (&str, &str),
+) -> Result<Option<PathBuf>, String> {
+    selected_path(export_dialog(app, slot, suggested_name, kind).blocking_save_file())
+}
+
+fn export_dialog(
+    app: &AppHandle,
+    slot: &ActiveScript,
+    suggested_name: &str,
+    kind: (&str, &str),
+) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let (label, extension) = kind;
     let mut dialog = app
         .dialog()
         .file()
         .set_title(format!("Export {label}"))
-        .set_file_name(safe_file_name(&suggested_name, extension))
+        .set_file_name(safe_file_name(suggested_name, extension))
         .add_filter(label, &[extension]);
-    if let Ok(root) = active_root(&state) {
+    if let Ok(root) = active_root_of(slot) {
         dialog = dialog.set_directory(root);
     }
-    let Some(selected) = dialog.blocking_save_file() else {
+    dialog
+}
+
+fn selected_path(
+    selected: Option<tauri_plugin_dialog::FilePath>,
+) -> Result<Option<PathBuf>, String> {
+    let Some(file) = selected else {
+        return Ok(None);
+    };
+    file.into_path()
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+fn save_picked(picked: Result<Option<PathBuf>, String>, bytes: &[u8]) -> Result<bool, String> {
+    let Some(path) = picked? else {
         return Ok(false);
     };
-    let path = selected.into_path().map_err(|error| error.to_string())?;
-    reject_symlink(&path)?;
-    atomic_write(&path, &bytes).map_err(|error| error.to_string())?;
+    save_export(&path, bytes)?;
     Ok(true)
 }
 
+fn save_export(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    reject_symlink(path)?;
+    atomic_write(path, bytes).map_err(|error| error.to_string())
+}
+
 fn activate(state: &State<'_, ActiveScript>, root: PathBuf) -> Result<OpenedScript, String> {
-    let root = canonical_directory(&root)?;
-    let text = read_script(&root)?;
-    state
-        .0
+    open_remembered(state, root)
+}
+
+fn open_remembered(slot: &ActiveScript, root: PathBuf) -> Result<OpenedScript, String> {
+    let opened = open_script(root)?;
+    remember_active(slot, &opened)?;
+    Ok(opened)
+}
+
+fn remember_active(slot: &ActiveScript, opened: &OpenedScript) -> Result<(), String> {
+    slot.0
         .lock()
         .map_err(|_| "Script state is unavailable.")?
-        .active = Some(root.clone());
-    Ok(OpenedScript {
-        root: root.to_string_lossy().into_owned(),
-        text,
-    })
+        .active = Some(PathBuf::from(&opened.root));
+    Ok(())
+}
+
+fn active_root_of(slot: &ActiveScript) -> Result<PathBuf, String> {
+    slot.0
+        .lock()
+        .map_err(|_| "Script state is unavailable.".to_string())?
+        .active
+        .clone()
+        .ok_or_else(|| "No script is open.".to_string())
 }
 
 fn active_root(state: &State<'_, ActiveScript>) -> Result<PathBuf, String> {
@@ -194,38 +282,65 @@ fn sync_parent(parent: &Path) -> io::Result<()> {
     File::open(parent)?.sync_all()
 }
 
+fn parent_dir(path: &Path) -> io::Result<&Path> {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"))
+}
+
+struct Written {
+    renamed: bool,
+    result: io::Result<()>,
+}
+
 fn commit_write<F, S>(path: &Path, bytes: &[u8], before_commit: F, sync_parent: S) -> io::Result<()>
 where
     F: FnOnce(&Path) -> io::Result<()>,
     S: FnOnce(&Path) -> io::Result<()>,
 {
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"))?;
+    let parent = parent_dir(path)?;
     fs::create_dir_all(parent)?;
     let temp = temporary_path(parent, path.file_name().unwrap_or_default());
+    finish_write(
+        &temp,
+        write_temp(&temp, path, bytes, before_commit, sync_parent, parent),
+    )
+}
+
+fn write_temp<F, S>(
+    temp: &Path,
+    path: &Path,
+    bytes: &[u8],
+    before_commit: F,
+    sync_parent: S,
+    parent: &Path,
+) -> Written
+where
+    F: FnOnce(&Path) -> io::Result<()>,
+    S: FnOnce(&Path) -> io::Result<()>,
+{
     let mut renamed = false;
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)?;
+        let mut file = OpenOptions::new().write(true).create_new(true).open(temp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
-        before_commit(&temp)?;
-        fs::rename(&temp, path)?;
+        before_commit(temp)?;
+        fs::rename(temp, path)?;
         renamed = true;
         sync_parent(parent)?;
         Ok(())
     })();
-    if renamed {
+    Written { renamed, result }
+}
+
+fn finish_write(temp: &Path, written: Written) -> io::Result<()> {
+    if written.renamed {
         // The new bytes are already the destination file. Failing the command
         // here would leave the session dirty after the previous file is gone.
         return Ok(());
     }
-    let _ = fs::remove_file(&temp);
-    result
+    let _ = fs::remove_file(temp);
+    written.result
 }
 
 fn temporary_path(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
@@ -408,5 +523,72 @@ mod tests {
         assert_eq!(safe_file_name("../../draft.pdf", "pdf"), "draft.pdf");
         assert_eq!(safe_file_name("", "csv"), "Untitled.csv");
         assert!(export_kind("html").is_err());
+    }
+
+    #[test]
+    fn reads_a_regular_script_and_rejects_other_files() {
+        let dir = temp_dir().canonicalize().unwrap();
+        assert!(read_script(&dir).unwrap().is_none());
+        fs::write(dir.join(SCRIPT_FILE), "body").unwrap();
+        assert_eq!(read_script(&dir).unwrap().as_deref(), Some("body"));
+        fs::remove_file(dir.join(SCRIPT_FILE)).unwrap();
+        fs::create_dir(dir.join(SCRIPT_FILE)).unwrap();
+        assert!(read_script(&dir)
+            .unwrap_err()
+            .contains("not a regular file"));
+        let notes = dir.join("notes.txt");
+        fs::write(&notes, "x").unwrap();
+        assert!(read_script(&notes).unwrap_err().contains("not a directory"));
+    }
+
+    #[test]
+    fn classifies_paths_before_replacing_them() {
+        let dir = temp_dir();
+        let file = dir.join(SCRIPT_FILE);
+        assert!(reject_symlink(&file).is_ok());
+        fs::write(&file, "body").unwrap();
+        assert!(reject_symlink(&file).is_ok());
+        let nested = dir.join("nested");
+        fs::create_dir(&nested).unwrap();
+        assert!(reject_symlink(&nested)
+            .unwrap_err()
+            .contains("not a regular file"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_replace_a_symlink() {
+        use std::os::unix::fs::symlink;
+        let dir = temp_dir();
+        let target = dir.join("target.json");
+        fs::write(&target, "secret").unwrap();
+        let link = dir.join("link.json");
+        symlink(&target, &link).unwrap();
+        assert!(reject_symlink(&link).unwrap_err().contains("symbolic link"));
+        let alias = dir.join("alias");
+        symlink(&dir, &alias).unwrap();
+        assert!(read_script(&alias).is_err());
+    }
+
+    #[test]
+    fn saves_and_promotes_a_pending_script() {
+        let dir = temp_dir().canonicalize().unwrap();
+        save_script(&dir, "saved").unwrap();
+        assert_eq!(fs::read_to_string(dir.join(SCRIPT_FILE)).unwrap(), "saved");
+        let slot = ActiveScript::default();
+        assert!(stage_script(&slot, Ok(None)).unwrap().is_none());
+        assert!(stage_script(&slot, Err("cancelled".to_string())).is_err());
+        assert!(stage_script(&slot, Ok(Some(dir.join("missing")))).is_err());
+        let opened = stage_script(&slot, Ok(Some(dir.clone()))).unwrap().unwrap();
+        assert_eq!(opened.root, dir.to_string_lossy());
+        promote(&slot).unwrap();
+        assert!(promote(&slot).is_err());
+        let again = open_remembered(&slot, dir.clone()).unwrap();
+        assert_eq!(again.text.as_deref(), Some("saved"));
+        assert!(!save_picked(Ok(None), b"nope").unwrap());
+        assert!(save_picked(Err("no path".to_string()), b"nope").is_err());
+        let copy = dir.join("copy.json");
+        assert!(save_picked(Ok(Some(copy.clone())), b"copy").unwrap());
+        assert_eq!(fs::read(&copy).unwrap(), b"copy");
     }
 }

@@ -237,6 +237,74 @@ describe("CodeMirror typed adapter", () => {
     expect(marks.some((from) => from > dialogue.from && from < dialogue.to)).toBe(true);
     editor.view.destroy();
   });
+
+  it("copies two elements and pastes them back as those elements", () => {
+    const parent = document.createElement("div");
+    const source = createEditor(
+      parent,
+      normalizeElements([
+        { type: "character", text: "BOB" },
+        { type: "dialogue", text: "Hello." },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    source.view.dispatch({ selection: { anchor: 0, head: source.view.state.doc.length } });
+    const copied = dispatchClipboard(source, "copy", {});
+    const mime = "application/x-scriptwriter-elements+json";
+    const encoded = copied.clipboardData?.getData(mime) ?? "";
+    expect(JSON.parse(encoded)).toEqual([
+      { type: "character", text: "BOB", blanksBefore: 0 },
+      { type: "dialogue", text: "Hello.", blanksBefore: 0 },
+    ]);
+    expect(copied.clipboardData?.getData("text/plain")).toBe(source.getDocument().text);
+    source.view.dispatch({ selection: { anchor: 0, head: 0 } });
+    expect(dispatchClipboard(source, "copy", {}).defaultPrevented).toBe(false);
+    source.view.dispatch({ selection: { anchor: 0, head: 1 } });
+    expect(dispatchClipboard(source, "copy", {}).defaultPrevented).toBe(false);
+
+    const target = createEditor(parent, [], { onChange: () => undefined, onCursor: () => undefined });
+    dispatchClipboard(target, "paste", {
+      [mime]: JSON.stringify([
+        { type: "action", text: "Wait.", blanksBefore: 0 },
+        { type: "action", text: "Go.", blanksBefore: 1 },
+      ]),
+      "text/plain": "Wait.\n\nGo.",
+    });
+    expect(target.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "action", text: "Wait." },
+      { type: "action", text: "Go." },
+    ]);
+    source.view.destroy();
+    target.view.destroy();
+  });
+
+  it("leaves the script unchanged when the clipboard is not a list of elements", () => {
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Stay." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const mime = "application/x-scriptwriter-elements+json";
+    const before = editor.getDocument().text;
+    const rejected = [
+      "",
+      "nope",
+      "{}",
+      "[null]",
+      "[]",
+      JSON.stringify([{ type: "nope", text: "Hi" }]),
+      JSON.stringify([{ type: "action", text: "a\nb" }]),
+    ];
+    for (const encoded of rejected) {
+      dispatchClipboard(editor, "paste", { [mime]: encoded, "text/plain": "" });
+      expect(editor.getDocument().text).toBe(before);
+    }
+    const missing = new Event("paste", { bubbles: true, cancelable: true });
+    editor.view.contentDOM.dispatchEvent(missing);
+    expect(editor.getDocument().text).toBe(before);
+    editor.view.destroy();
+  });
 });
 
 function typeText(editor: ScriptEditor, at: number, text: string) {
@@ -245,6 +313,26 @@ function typeText(editor: ScriptEditor, at: number, text: string) {
     selection: { anchor: at + text.length },
     annotations: Transaction.userEvent.of("input.type"),
   });
+}
+
+function dispatchClipboard(
+  editor: ScriptEditor,
+  type: "copy" | "paste",
+  values: Record<string, string>,
+): Event & { clipboardData: { getData: (mime: string) => string } } {
+  const stored = new Map(Object.entries(values));
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    configurable: true,
+    value: {
+      getData: (mime: string) => stored.get(mime) ?? "",
+      setData: (mime: string, value: string) => {
+        stored.set(mime, value);
+      },
+    },
+  });
+  editor.view.contentDOM.dispatchEvent(event);
+  return event as Event & { clipboardData: { getData: (mime: string) => string } };
 }
 
 function pressEnter(editor: ScriptEditor) {

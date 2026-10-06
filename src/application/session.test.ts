@@ -36,6 +36,22 @@ class FakeRepository implements ScriptRepository {
 }
 
 describe("script session", () => {
+  it("adopts the loaded document only while the script is clean", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    const loaded = elementsDocument(normalizeElements([{ type: "action", text: "Loaded." }]));
+    session.adoptLoadedDocument(loaded);
+    expect(session.state.document).toBeNull();
+    await session.start();
+    session.adoptLoadedDocument(loaded);
+    expect(session.state.document?.text).toBe("Loaded.");
+    expect(session.needsSave()).toBe(false);
+    session.setHeader("title", "Dirty");
+    const later = elementsDocument(normalizeElements([{ type: "action", text: "Later." }]));
+    session.adoptLoadedDocument(later);
+    expect(session.state.document?.text).toBe("Loaded.");
+  });
+
   it("loads, edits, and saves the latest typed revision", async () => {
     const repository = new FakeRepository();
     const session = new ScriptSession(repository, 60_000);

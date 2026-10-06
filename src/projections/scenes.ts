@@ -102,8 +102,22 @@ export function scenesCsv(rows: readonly SceneRow[]): string {
 }
 
 function byLocation(a: SceneRow, b: SceneRow): number {
-  if (a.location === "" && b.location !== "") return 1;
-  if (b.location === "" && a.location !== "") return -1;
+  const empty = emptyLocationOrder(a, b);
+  if (empty !== 0) return empty;
+  return locationOrder(a, b);
+}
+
+function emptyLocationOrder(a: SceneRow, b: SceneRow): number {
+  if (emptyFirst(a.location, b.location)) return 1;
+  if (emptyFirst(b.location, a.location)) return -1;
+  return 0;
+}
+
+function emptyFirst(location: string, other: string): boolean {
+  return location === "" && other !== "";
+}
+
+function locationOrder(a: SceneRow, b: SceneRow): number {
   const compared = a.location.localeCompare(b.location, undefined, { sensitivity: "base" });
   return compared !== 0 ? compared : a.number - b.number;
 }
