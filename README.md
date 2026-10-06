@@ -17,7 +17,12 @@ ln -s "$(pwd)/sw" ~/cmds/sw
 
 `~/cmds` is one directory already on `PATH`. Any other directory on `PATH` works the same way. The link points at `sw` in the clone. The script resolves that link and uses the clone as its home.
 
-The machine needs `zsh`, Node and npm, Rust (`cargo`), and the Xcode Command Line Tools.
+The machine needs `zsh`, Node and npm, Rust (`cargo`), the Xcode Command Line Tools,
+and `cargo-audit` for the Rust dependency audit:
+
+```
+cargo install cargo-audit --locked
+```
 
 Then:
 
@@ -38,10 +43,10 @@ With no directory, scriptwriter opens spec-script/.
 
 Inside the window:
 
-- **File → Open Script** (⌘O) opens another folder. **Export PDF** (⌘⇧E) writes a PDF. **Export Scenes** (⌘⇧L) writes a CSV of the scenes, sorted by location, with the scene number, the act, and the actors.
+- **File → Open Script** (⌘O) opens another folder. **Export PDF** (⌘⇧E) writes a PDF. **Export Scenes** (⌘⇧L) writes a CSV of the scenes, sorted by location, with the scene number, script page, act, and actors.
 - The title at the top of the window is the title page title. The fields beside the page are the credit, the author, the draft, and the contact. The list under the fields is the acts and the numbered scene headings. Choosing one scrolls to it.
-- The page is Courier, 12 point, on US Letter. Return moves among the elements. Tab cycles through the element types and leaves the cursor on the same character. ⌘1 through ⌘8 set the element. Find is ⌘F. Scene numbers sit in the margins. The current element is named in grey italics in the left margin. A blank line is not named and cannot be edited. A right-click on that name opens the Format menu. An up arrow to the left of the scene number inserts an empty scene heading before that scene. An act is centered and starts a new page unless it is already the first element on the page. A selection inside an element edits that text. A selection across elements takes each of those elements, and Copy or Delete applies to all of them.
-- Edits are saved into the open folder after a short pause.
+- The page is monospaced, 12 point, on US Letter. Return moves among the elements. Tab cycles through the element types and leaves the cursor on the same character. ⌘1 through ⌘8 set the element. Text never chooses an element type: prefixes such as `INT.` and `EXT.` are ordinary text. Find is ⌘F. Scene numbers sit in the margins. The current element is named in grey italics in the left margin. A blank line is not named and cannot be edited. A right-click on that name opens the Format menu. An up arrow to the left of the scene number inserts an empty scene heading before that scene. An act is centered and starts a new page unless it is already the first element on the page. A selection inside an element edits that text. A selection across elements takes each of those elements, and Copy or Delete applies to all of them.
+- Edits are saved atomically into the open folder after a short pause. Closing or opening another script first flushes the latest edit.
 
 ## A script on disk
 
@@ -61,20 +66,23 @@ my-script/
 | `scriptwriter-spec.md` | Living spec |
 | `spec-script/` | The script opened when `scriptwriter` is started with no directory |
 | `index.html`, `src/main/styles.css` | The window |
-| `src/main/main.ts` | Menus, title page, scene list |
-| `src/ui/editor.ts` | The screenplay editor |
-| `src/internals/fountain.ts` | Element types, and the markers the editor keeps |
-| `src/internals/edit.ts` | Return, Tab, Backspace |
-| `src/internals/smarttype.ts` | The lists |
-| `src/internals/layout.ts` | Pages, `(MORE)`, `(CONT'D)` |
-| `src/internals/scenes.ts` | Scene numbers, acts, and the scene CSV |
-| `src/internals/script.ts` | Load and save `script.json` |
-| `src/export/pdf.ts` | PDF |
-| `src-tauri/src/lib.rs` | Reads and writes the script folder |
+| `src/main/main.ts` | Window and DOM wiring |
+| `src/application/session.ts` | Load, save, close, switching, and export lifecycle |
+| `src/domain/` | Element rules and immutable typed documents |
+| `src/editor/adapter.ts` | CodeMirror text and explicit element metadata |
+| `src/editor/commands.ts` | Return, Tab, Backspace, and structured paste |
+| `src/projections/` | Cached pages, outline, scenes, and completion |
+| `src/projections/layout.ts` | Pages, `(MORE)`, `(CONT'D)` |
+| `src/projections/scenes.ts` | Scene numbers, acts, and the scene CSV |
+| `src/domain/script.ts` | Validate and serialize `script.json` |
+| `src/infrastructure/` | The narrow native repository adapter |
+| `src/export/pdf.ts` | Unicode PDF rendering |
+| `src-tauri/src/lib.rs` | Authorized roots, atomic saves, and export dialogs |
 
 Tests are the `*.test.ts` files next to the source, and the tests at the bottom of `src-tauri/src/lib.rs`.
 
 ```
 npm test
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+npm run check
+npm run audit
 ```

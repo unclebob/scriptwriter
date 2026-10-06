@@ -8,10 +8,14 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "check": "npm test && npm run build && cargo test --manifest-path src-tauri/Cargo.toml && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && zsh -n sw",
+    "audit": "npm audit && cargo audit --file src-tauri/Cargo.lock",
     "tauri": "tauri"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "jsdom": "^30.1.2",
+    "pdfjs-dist": "^6.4.299",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^4.1.11"
@@ -22,9 +26,10 @@
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/cli": "^2.12.0",
-    "@tauri-apps/plugin-clipboard-manager": "^2.4.0",
-    "@tauri-apps/plugin-dialog": "^2.8.0"
+    "dejavu-fonts-ttf": "^2.37.3",
+    "pdf-lib": "^1.17.1"
   }
 }

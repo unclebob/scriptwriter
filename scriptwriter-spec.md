@@ -62,28 +62,9 @@ A parenthetical is a whole line in parentheses. The editor keeps the parentheses
 
 Each element is one line in the editor. A blank line is the space before the next element. It is not an element. The status bar calls it Blank. The left margin does not name it. Typing, Delete, and Backspace do not change it. Wrapping is done by the editor and by the PDF. The file does not hard-wrap.
 
-The editor keeps a marker at the start of a line when the line's shape would be read as a different element. `script.json` does not store the marker. It stores the type and the text. The markers are:
+CodeMirror stores the visible text and an explicit element type for every element line. Blank separator lines have no type. Text and type metadata change in the same undoable transaction. Saving combines that visible text and metadata directly; it does not classify text.
 
-| Marker | Meaning |
-|---|---|
-| `@` | The line is a character cue. |
-| `!` | The line is action that would otherwise be read as a slug, a shot, a transition, a cue, or an act. |
-| `~` | The line is a shot. |
-| `.` | The line is a scene heading that does not start with a scene intro. |
-| `#` | The line is an act title that is not a plain act label. |
-
-A heading that starts with `INT.`, `EXT.`, `INT./EXT.`, `EXT./INT.`, or `I/E.` needs no dot. A transition the program recognizes needs no `>`. Anything else is recognized by its shape:
-
-- A line that is only parentheses is a parenthetical. Action written that way keeps the `!`.
-- The line under a character, a parenthetical, or dialogue, with no blank line, is dialogue.
-- A line that starts with a zero-width space is dialogue. The editor does not show that space.
-- A line of capitals that is not a heading or a transition, and whose next line is text, is a character.
-- A line of capitals that is not a heading or a transition, and whose next line is blank, is a shot. Fifty characters is the limit. A longer line of capitals is action.
-- `CUT TO:`, `DISSOLVE TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `FADE IN:`, `FADE OUT.`, `FADE TO BLACK.`, `FADE TO WHITE.`, and `BACK TO:` are transitions when the letters are uppercase.
-- A line the writer starts with `INT.` or `EXT.` (or the other intros) while in action becomes a scene heading.
-- A line that is only `ACT` and a number, a roman numeral, or a word from one to ten is an act. `ACT ONE` and `ACT I` need no marker. Any other act title keeps the `#`.
-
-An empty dialogue line is that zero-width space alone, so the line does not collapse into the blank line that ends a speech. A dialogue line that does not follow a character, a parenthetical, or dialogue keeps the space at the start, so the line stays dialogue.
+Text has no special prefixes or hidden characters. `INT.`, `EXT.`, `ACT ONE`, leading punctuation, zero-width characters, and every other string are ordinary content. Typing or pasting them never changes an element's type. A scene heading exists only when the writer selects Scene Heading or reaches it through an explicit Return rule.
 
 ## Writing
 
@@ -102,7 +83,7 @@ Return adds the next element and moves the cursor there. Text after the cursor m
 | Shot | Action |
 | Act | Scene Heading |
 
-Tab cycles through every element type, in the order below, and then back to the start. The cursor stays on the same character. Shift-Tab cycles the other way. The text stays. The case and the markers change to fit the new type.
+Tab cycles through every element type, in the order below, and then back to the start. The cursor stays on the same character. Shift-Tab cycles the other way. The text stays. Case and parentheses change to fit the explicitly selected type.
 
 | Element | Tab | Shift-Tab |
 |---|---|---|
@@ -115,7 +96,7 @@ Tab cycles through every element type, in the order below, and then back to the 
 | Shot | Act | Transition |
 | Act | Scene Heading | Shot |
 
-Backspace in an empty element removes it and returns to the end of the previous element. Backspace at the start of a line does not eat the hidden marker. Delete at the end of an element does not join the next line.
+Backspace in an empty element removes it and returns to the end of the previous element. Backspace at the start of a line and Delete at the end of an element do not join elements.
 
 A selection inside one element selects that text. Copy and Delete act on those characters. A selection that reaches another element expands to cover every element from the first one it touches through the last. Copy takes those elements. Delete removes them. Pasting that copy inserts the elements after the element the cursor is in, or replaces the elements the selection covers.
 
@@ -132,24 +113,21 @@ The Format menu and the number keys set the current element.
 | ⌘7 | Shot |
 | ⌘8 | Act |
 
-Typing `INT.` or `EXT.` at the start of action, including `INT./EXT.`, `EXT./INT.`, and `I/E.`, changes that line into a scene heading. Typing a plain act label, such as `ACT ONE` or `ACT I`, at the start of action changes that line into an act.
-
-## Smart type
+## Completion
 
 The lists come from the script. They are not stored.
 
 - A character cue offers the character names already used. In a scene where two people have been talking, the name offered first is the one who did not speak last.
 - After `(` in a cue, the extensions are `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`, `(PRE-LAP)`, and `(FILTER)`.
-- A scene heading offers `INT.`, `EXT.`, `INT./EXT.`, `EXT./INT.`, and `I/E.`, then the locations already used, then `DAY`, `NIGHT`, `MORNING`, `AFTERNOON`, `EVENING`, `LATER`, `CONTINUOUS`, `MOMENTS LATER`, `SAME`, `SUNRISE`, `SUNSET`, `DAWN`, and `DUSK`.
 - A transition offers `CUT TO:`, `DISSOLVE TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `FADE IN:`, `FADE OUT.`, `FADE TO BLACK.`, and `BACK TO:`.
 
-Tab and Return accept the highlighted entry. In a scene heading they stay in the heading so the next part can be filled. In a character cue, Return then opens dialogue.
+Scene headings have no prefix, location, or time completion because their text is opaque. Tab and Return accept a highlighted character or transition entry. In a character cue, Return then opens dialogue.
 
 ## The window
 
 The title in the header is the title page title. The fields under it are the credit, the author, the draft, and the contact. The list under the fields is the acts and the scene headings, in script order. A scene shows its number. Choosing one scrolls to it. The row the cursor is in is marked.
 
-The script is Courier, 12 point, on US Letter. The sheet grows with the script, and the window scrolls to the later pages. The editor wraps to the element widths. A rule marks where each new page starts, at the start of the line that crosses onto that page. The status bar shows the element and the page, as `Page 2 of 40`. The status bar and the PDF share the page count.
+The script is monospaced, 12 point, on US Letter. The sheet grows with the script, and the window scrolls to the later pages. The editor wraps to the element widths. A rule marks where each new page starts, at the start of the line that crosses onto that page. The status bar shows the element and the page, as `Page 2 of 40`. The status bar and the PDF share one cached page projection for the document revision.
 
 The element the cursor is in is also named in the left margin, on that line, in grey italics. A blank line has no margin name.
 
@@ -159,11 +137,11 @@ An up arrow sits to the left of the scene number. Clicking it inserts an empty s
 
 Find is ⌘F.
 
-Edits are saved into the open folder after a short pause.
+Edits are saved atomically into the open folder after a short pause. Closing or switching scripts waits for the latest revision to save. A failed save leaves the earlier valid file in place and keeps the window open for retry.
 
 ## Pages
 
-A page is US Letter. The type is Courier, 12 point, 10 characters to the inch, 6 lines to the inch. Fifty-four lines fit under a one-inch top margin and above a one-inch bottom margin.
+A page is US Letter. The type is a Unicode-capable monospaced font at 12 point, approximately 10 characters to the inch and 6 lines to the inch. Fifty-four lines fit under a one-inch top margin and above a one-inch bottom margin.
 
 | Element | Left edge | Width |
 |---|---|---|
@@ -194,10 +172,13 @@ Export Scenes (⌘⇧L) writes a CSV, sorted by location and then by scene numbe
 
 | Column | What it is |
 |---|---|
-| Location | The place in the heading. A heading with no intro uses the whole heading. |
+| Location | The complete, opaque scene-heading text. |
 | Scene | The scene number. |
+| Page | The script page containing the scene heading. The title page is not counted. |
 | Act | The act in effect at that heading. |
 | Actors | The character cues after the heading and before the next scene heading or act, in order. A name is listed once. An extension such as `(V.O.)` is left off. |
+
+Text cells that begin with spreadsheet formula characters, including after leading whitespace or controls, are escaped before CSV quoting.
 
 ## What this is not
 

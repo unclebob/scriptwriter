@@ -1,5 +1,5 @@
-import { cueName } from "./smarttype";
-import { parseScript, type ElementType } from "./fountain";
+import type { DocumentSnapshot } from "../domain/document";
+import type { ElementType } from "../domain/elements";
 
 /** Lines under a one-inch top margin and above a one-inch bottom margin at 6 lines to the inch. */
 export const LINES_PER_PAGE = 54;
@@ -31,7 +31,6 @@ type Block = {
   chars: number[];
   blanksBefore: number;
   from: number;
-  marker: number;
   speaker: string;
 };
 
@@ -59,8 +58,8 @@ type Sheet = { pages: Placed[][]; used: number };
 
 type Remainder = { lines: string[]; chars: number[]; continuation: boolean; done: boolean };
 
-export function paginate(doc: string): Placed[][] {
-  const blocks = blocksOf(doc);
+export function paginate(document: DocumentSnapshot): Placed[][] {
+  const blocks = blocksOf(document);
   const sheet: Sheet = { pages: [[]], used: 0 };
   for (let index = 0; index < blocks.length; index += 1) {
     placeBlock(sheet, blocks[index], blocks[index + 1] ?? null);
@@ -224,8 +223,7 @@ function newPage(sheet: Sheet) {
   sheet.used = 0;
 }
 
-export function pageAt(doc: string, pos: number): { page: number; pages: number } {
-  const pages = paginate(doc);
+export function pageAt(pages: readonly Placed[][], pos: number): { page: number; pages: number } {
   let page = 1;
   let best = -1;
   for (let i = 0; i < pages.length; i += 1) {
@@ -239,8 +237,7 @@ export function pageAt(doc: string, pos: number): { page: number; pages: number 
 }
 
 /** Source offsets where a page after the first one begins. */
-export function pageStarts(doc: string): number[] {
-  const pages = paginate(doc);
+export function pageStarts(pages: readonly Placed[][]): number[] {
   const starts: number[] = [];
   for (let i = 1; i < pages.length; i += 1) {
     const line = pages[i].find((item) => item.source !== undefined);
@@ -254,19 +251,18 @@ export function withContd(name: string): string {
   return `${name} (CONT'D)`;
 }
 
-function blocksOf(doc: string): Block[] {
-  const elements = parseScript(doc);
+function blocksOf(document: DocumentSnapshot): Block[] {
+  const elements = document.elements;
   let speaker = "";
-  return elements.map((element, index) => {
+  return elements.map((element) => {
     if (element.type === "character" && element.text.trim()) speaker = element.text.trim();
     const wrapped = wrapTracked(element.text, WIDTH[element.type]);
     return {
       type: element.type,
       lines: wrapped.lines,
       chars: wrapped.chars,
-      blanksBefore: leadingBlanks(doc, elements, index),
+      blanksBefore: element.blanksBefore,
       from: element.from,
-      marker: element.marker,
       speaker,
     };
   });
@@ -284,26 +280,16 @@ function wrapTracked(text: string, width: number): { lines: string[]; chars: num
   return { lines, chars };
 }
 
-function leadingBlanks(doc: string, elements: { to: number; from: number }[], index: number): number {
-  if (index === 0) return 0;
-  return blankCount(doc, elements[index - 1].to, elements[index].from);
-}
-
-function blankCount(doc: string, prevTo: number, from: number): number {
-  const newlines = doc.slice(prevTo, from).match(/\n/g);
-  return Math.max(0, (newlines?.length ?? 0) - 1);
-}
-
 function keepsWithNext(type: ElementType): boolean {
   return type === "scene" || type === "act" || type === "shot" || type === "character" || type === "parenthetical";
 }
 
 function sourceAt(block: Block, charIndex: number): number {
-  return block.from + block.marker + charIndex;
+  return block.from + charIndex;
 }
 
 function contd(block: Block, charIndex: number): Placed {
-  return { text: withContd(block.speaker || cueName(block.speaker)), role: "character", source: sourceAt(block, charIndex) };
+  return { text: withContd(block.speaker), role: "character", source: sourceAt(block, charIndex) };
 }
 
 function putLines(block: Block, lines: string[], chars: number[], put: (line: Placed) => void) {

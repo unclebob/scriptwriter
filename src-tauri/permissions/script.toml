@@ -1,8 +1,9 @@
 [[permission]]
 identifier = "script-access"
-description = "Read and write the open script folder."
+description = "Load and save the active script and export through a native save dialog."
 commands.allow = [
-  "read_text",
-  "write_text",
-  "startup_script_path",
+  "load_startup_script",
+  "choose_script",
+  "save_active_script",
+  "export_file",
 ]
