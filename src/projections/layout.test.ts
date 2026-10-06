@@ -10,6 +10,7 @@ describe("pagination", () => {
   it("wraps text at the element width", () => {
     expect(wrapText("one two three four", 8)).toEqual(["one two", "three", "four"]);
     expect(wrapText("superduper", 5)).toEqual(["super", "duper"]);
+    expect(wrapText("", 8)).toEqual([""]);
   });
 
   it("keeps a scene heading with what follows", () => {
@@ -75,5 +76,27 @@ describe("pagination", () => {
     expect(pageStarts(pages)).toEqual([script.elements[2].from]);
     expect(pageAt(pages, script.elements[2].from)).toEqual({ page: 2, pages: 2 });
     expect(LINES_PER_PAGE).toBe(54);
+  });
+
+  it("moves dialogue that cannot start in the last line onto the next page", () => {
+    const elements: Omit<ScriptElement, "blanksBefore">[] = Array.from({ length: 27 }, () => ({
+      type: "action" as const,
+      text: "A",
+    }));
+    elements.push({ type: "dialogue", text: "x".repeat(36) });
+    const pages = paginate(document(elements));
+    const speech = (page: { role: string; text: string }[]) =>
+      page.filter((line) => line.role === "dialogue").map((line) => line.text).join("");
+    expect(speech(pages[0])).toBe("");
+    expect(pages[0].some((line) => line.text === "(MORE)")).toBe(false);
+    expect(speech(pages[1])).toBe("x".repeat(36));
+    expect(pages[1].some((line) => line.text === "(MORE)")).toBe(false);
+  });
+
+  it("splits an action that runs past the bottom of the page", () => {
+    const pages = paginate(document([{ type: "action", text: "x".repeat(60 * 55) }]));
+    expect(pages.map((page) => page.length)).toEqual([54, 1]);
+    expect(pages[0].every((line) => line.text === "x".repeat(60))).toBe(true);
+    expect(pages[1][0].text).toBe("x".repeat(60));
   });
 });

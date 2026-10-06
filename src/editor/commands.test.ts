@@ -232,4 +232,95 @@ describe("typed editing", () => {
     const changed = setElement(elementsDocument([]), 0, "character");
     expect(changed.document).toEqual(editorDocument([{ type: "character", text: "", blanksBefore: 0 }]));
   });
+
+  it("opens the next element when Return is pressed on the blank line between elements", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+    ]);
+    const opened = enter(original, original.elements[0].to + 1);
+    const placed = next(opened);
+    expect(placed.elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "" },
+      { type: "action", text: "Wait." },
+    ]);
+    expect(opened.cursor).toBe(placed.elements[1].to);
+  });
+
+  it("leaves a non-empty element unchanged when Backspace is at its start", () => {
+    const original = doc([{ type: "action", text: "Wait." }]);
+    const edit = backspace(original, original.elements[0].from);
+    expect(edit?.document).toBe(original);
+    expect(edit?.cursor).toBe(original.elements[0].from);
+  });
+
+  it("lets Backspace delete a character inside an element", () => {
+    const original = doc([{ type: "action", text: "Wait." }]);
+    expect(backspace(original, original.elements[0].from + 1)).toBeNull();
+  });
+
+  it("leaves a blank line unchanged on Backspace", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+    ]);
+    const blank = original.elements[0].to + 1;
+    const edit = backspace(original, blank);
+    expect(edit?.document).toBe(original);
+    expect(edit?.cursor).toBe(blank);
+  });
+
+  it("lets Delete remove a character inside an element", () => {
+    const original = doc([{ type: "action", text: "Wait." }]);
+    expect(deleteForward(original, original.elements[0].from + 1)).toBeNull();
+  });
+
+  it("leaves a blank line unchanged when assigning a type", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+    ]);
+    const blank = original.elements[0].to + 1;
+    const edit = setElement(original, blank, "dialogue");
+    expect(edit.document).toBe(original);
+    expect(edit.cursor).toBe(blank);
+  });
+
+  it("inserts elements after the element that holds the caret", () => {
+    const original = doc([
+      { type: "action", text: "Stay." },
+      { type: "action", text: "Go." },
+    ]);
+    const at = original.elements[0].to;
+    const inserted = insertElements(original, at, at, [{ type: "action", text: "Next.", blanksBefore: 0 }]);
+    expect(next(inserted!).elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "action", text: "Stay." },
+      { type: "action", text: "Next." },
+      { type: "action", text: "Go." },
+    ]);
+  });
+
+  it("drops the blank before dialogue and inserts one before a later action", () => {
+    const spaced = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "Wait." },
+    ]);
+    const asDialogue = setElement(spaced, spaced.elements[1].from, "dialogue");
+    expect(next(asDialogue).text).toBe("ROOM\nWait.");
+    expect(next(asDialogue).elements[1]).toMatchObject({ type: "dialogue", text: "Wait.", blanksBefore: 0 });
+
+    const tight = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "dialogue", text: "Hello." },
+    ]);
+    expect(tight.text).toBe("ROOM\nHello.");
+    const asAction = setElement(tight, tight.elements[1].from, "action");
+    expect(next(asAction).text).toBe("ROOM\n\nHello.");
+    expect(next(asAction).elements[1]).toMatchObject({ type: "action", text: "Hello.", blanksBefore: 1 });
+
+    const first = setElement(tight, tight.elements[0].from, "action");
+    expect(next(first).text).toBe("ROOM\nHello.");
+    expect(next(first).elements[0]).toMatchObject({ type: "action", text: "ROOM", blanksBefore: 0 });
+  });
 });

@@ -522,6 +522,8 @@ mod tests {
     fn sanitizes_export_suggestions_and_extensions() {
         assert_eq!(safe_file_name("../../draft.pdf", "pdf"), "draft.pdf");
         assert_eq!(safe_file_name("", "csv"), "Untitled.csv");
+        assert_eq!(safe_file_name(".", "pdf"), "Untitled.pdf");
+        assert_eq!(safe_file_name("..", "csv"), "Untitled.csv");
         assert!(export_kind("html").is_err());
     }
 

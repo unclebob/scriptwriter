@@ -23,6 +23,13 @@ describe("native repository adapter", () => {
     expect(invoke).toHaveBeenCalledWith("commit_script");
   });
 
+  it("asks the native shell to choose a script", async () => {
+    vi.mocked(invoke).mockResolvedValue({ root: "/script", text: null });
+    const repository = new TauriScriptRepository();
+    await expect(repository.chooseScript()).resolves.toEqual({ root: "/script", text: null });
+    expect(invoke).toHaveBeenCalledWith("choose_script");
+  });
+
   it("passes export bytes to the native save-dialog operation", async () => {
     vi.mocked(invoke).mockResolvedValue(true);
     const repository = new TauriScriptRepository();
