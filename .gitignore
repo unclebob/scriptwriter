@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.metrics/
+/target/
 src-tauri/target/
 src-tauri/target-sw/
 src-tauri/gen/
