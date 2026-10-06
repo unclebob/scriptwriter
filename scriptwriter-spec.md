@@ -122,7 +122,7 @@ The lists come from the script. They are not stored.
 - After `(` in a cue, the extensions are `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`, `(PRE-LAP)`, and `(FILTER)`.
 - A transition offers `CUT TO:`, `DISSOLVE TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `FADE IN:`, `FADE OUT.`, `FADE TO BLACK.`, and `BACK TO:`.
 
-The list opens as the name or heading is typed. Tab and Return accept a highlighted entry. In a character cue, Return then opens dialogue.
+The list opens as the name or heading is typed. It stays inside the window, and opens above the cursor when there is more room above than below. Tab and Return accept a highlighted entry. In a character cue, Return then opens dialogue.
 
 ## The window
 

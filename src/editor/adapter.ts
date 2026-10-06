@@ -2,7 +2,7 @@ import { acceptCompletion, autocompletion, completionKeymap, completionStatus, s
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, Prec, Transaction } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, tooltips, type Rect } from "@codemirror/view";
 import {
   editorDocument,
   elementAt,
@@ -66,13 +66,13 @@ export function createEditor(
 ): ScriptEditor {
   const view = new EditorView({
     parent,
-    state: stateFor(editorDocument(elements)),
+    state: stateFor(editorDocument(elements), parent.ownerDocument),
     dispatch: (transaction) => dispatchTo(view, hooks, transaction),
   });
   return {
     view,
     setElements(next) {
-      view.setState(stateFor(editorDocument(next)));
+      view.setState(stateFor(editorDocument(next), view.dom.ownerDocument));
       hooks.onCursor(documentOf(view.state), view.state.selection.main.head);
     },
     getDocument: () => documentOf(view.state),
@@ -102,7 +102,7 @@ function dispatchTo(view: EditorView, hooks: EditorHooks, transaction: Transacti
   }
 }
 
-function stateFor(document: EditorDocument): EditorState {
+function stateFor(document: EditorDocument, host: globalThis.Document): EditorState {
   const anchor = openingCursor(document);
   return EditorState.create({
     doc: document.text,
@@ -115,6 +115,7 @@ function stateFor(document: EditorDocument): EditorState {
       EditorView.contentAttributes.of({ spellcheck: "true" }),
       EditorView.domEventHandlers({ copy: copyElements, paste: pasteElements }),
       autocompletion({ override: [completeSource], activateOnTyping: true, defaultKeymap: false }),
+      tooltips({ parent: host.body ?? undefined, tooltipSpace: completionTooltipSpace }),
       scriptTheme,
       scriptDecorations,
       normalizeInput,
@@ -154,7 +155,34 @@ const scriptTheme = EditorView.theme({
   ".cm-line.el-transition": { textAlign: "right" },
   ".cm-gutters": { display: "none" },
   "&.cm-focused": { outline: "none" },
+  ".cm-tooltip.cm-tooltip-autocomplete": { overflow: "hidden" },
 });
+
+/** The rectangle the completion menu may occupy: the window, and no further than the page stage. */
+export function completionBounds(windowBox: Rect, stageBox: Rect | null): Rect {
+  const limit = stageBox ?? windowBox;
+  return {
+    top: Math.max(windowBox.top, limit.top),
+    left: Math.max(windowBox.left, limit.left),
+    bottom: Math.min(windowBox.bottom, limit.bottom),
+    right: Math.min(windowBox.right, limit.right),
+  };
+}
+
+function completionTooltipSpace(view: EditorView): Rect {
+  const root = view.dom.ownerDocument.documentElement;
+  const bounds = completionBounds(
+    { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth },
+    stageRect(view.dom.closest(".stage")),
+  );
+  return { top: bounds.top + 4, left: bounds.left + 4, bottom: bounds.bottom - 4, right: bounds.right - 4 };
+}
+
+function stageRect(stage: Element | null): Rect | null {
+  if (!stage) return null;
+  const box = stage.getBoundingClientRect();
+  return { top: box.top, left: box.left, bottom: box.bottom, right: box.right };
+}
 
 function openingCursor(document: EditorDocument): number {
   const first = snapshot(document).elements[0];

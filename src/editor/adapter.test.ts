@@ -6,7 +6,7 @@ import { Transaction } from "@codemirror/state";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeElements, type DocumentSnapshot } from "../domain/document";
 import { derivationCount, resetDerivedCache } from "../projections/derived";
-import { createEditor, useElement, type ScriptEditor } from "./adapter";
+import { completionBounds, createEditor, useElement, type ScriptEditor } from "./adapter";
 import { scriptDecorations } from "./decorations";
 
 beforeEach(() => {
@@ -152,6 +152,42 @@ describe("CodeMirror typed adapter", () => {
     ]);
     parent.remove();
     editor.view.destroy();
+  });
+
+  it("keeps the completion menu inside the window", () => {
+    const windowBox = { top: 0, left: 0, bottom: 800, right: 1200 };
+    expect(completionBounds(windowBox, { top: 90, left: 260, bottom: 740, right: 1100 })).toEqual({
+      top: 90,
+      left: 260,
+      bottom: 740,
+      right: 1100,
+    });
+    expect(completionBounds(windowBox, { top: -20, left: -10, bottom: 900, right: 1400 })).toEqual(windowBox);
+    expect(completionBounds(windowBox, null)).toEqual(windowBox);
+  });
+
+  it("draws the completion menu outside the scrolling page", async () => {
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    document.body.append(stage);
+    const editor = createEditor(
+      stage,
+      normalizeElements([
+        { type: "character", text: "BOB" },
+        { type: "character", text: "B" },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(editor.getDocument().elements[1].to);
+    startCompletion(editor.view);
+    await vi.waitFor(() => expect(completionStatus(editor.view.state)).toBe("active"));
+    const menu = document.querySelector(".cm-tooltip-autocomplete");
+    expect(menu).toBeTruthy();
+    expect(stage.contains(menu)).toBe(false);
+    expect(document.body.contains(menu)).toBe(true);
+    editor.view.destroy();
+    stage.remove();
+    expect(document.querySelector(".cm-tooltip-autocomplete")).toBeNull();
   });
 
   it("suggests a character name as it is typed", async () => {
