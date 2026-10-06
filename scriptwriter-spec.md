@@ -118,10 +118,11 @@ The Format menu and the number keys set the current element.
 The lists come from the script. They are not stored.
 
 - A character cue offers the character names already used. In a scene where two people have been talking, the name offered first is the one who did not speak last.
+- A scene heading offers the scene headings already used, each as a whole line. The heading used most recently comes first. A heading is not split into a prefix, a location, and a time of day.
 - After `(` in a cue, the extensions are `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`, `(PRE-LAP)`, and `(FILTER)`.
 - A transition offers `CUT TO:`, `DISSOLVE TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `FADE IN:`, `FADE OUT.`, `FADE TO BLACK.`, and `BACK TO:`.
 
-Scene headings have no prefix, location, or time completion because their text is opaque. Tab and Return accept a highlighted character or transition entry. In a character cue, Return then opens dialogue.
+The list opens as the name or heading is typed. Tab and Return accept a highlighted entry. In a character cue, Return then opens dialogue.
 
 ## The window
 

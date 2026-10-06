@@ -54,6 +54,7 @@ export function completions(document: DocumentSnapshot, cursor: number): Complet
   const at = cursor - element.from;
   if (at < 0) return null;
   if (element.type === "character") return characterList(document, element, at);
+  if (element.type === "scene") return sceneList(document, element, at);
   if (element.type === "transition") return matching(TRANSITIONS, element.text.slice(0, at), element.from, element.to);
   return null;
 }
@@ -74,6 +75,38 @@ function characterList(
   const names = characterNames(document);
   const ordered = other ? [other, ...names.filter((name) => name !== other)] : names;
   return matching(ordered, typed, element.from, element.from + baseEnd);
+}
+
+function sceneList(document: DocumentSnapshot, element: PositionedElement, at: number): CompletionList | null {
+  const typed = element.text.slice(0, Math.min(at, element.text.length)).trim().toUpperCase();
+  const headings = sceneHeadings(document);
+  const recent = latestSceneHeading(document, element.from);
+  const ordered = recent ? [recent, ...headings.filter((heading) => heading !== recent)] : headings;
+  return matching(ordered, typed, element.from, element.to);
+}
+
+function sceneHeadings(document: DocumentSnapshot): string[] {
+  const seen = new Set<string>();
+  const headings: string[] = [];
+  for (const element of document.elements) {
+    if (element.type !== "scene") continue;
+    const heading = element.text.trim().toUpperCase();
+    if (!heading || seen.has(heading)) continue;
+    seen.add(heading);
+    headings.push(heading);
+  }
+  return headings;
+}
+
+function latestSceneHeading(document: DocumentSnapshot, before: number): string | null {
+  let latest: string | null = null;
+  for (const element of document.elements) {
+    if (element.from >= before) break;
+    if (element.type !== "scene") continue;
+    const heading = element.text.trim().toUpperCase();
+    if (heading) latest = heading;
+  }
+  return latest;
 }
 
 function matching(pool: readonly string[], typed: string, from: number, to: number): CompletionList | null {

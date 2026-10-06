@@ -189,7 +189,7 @@ const normalizeInput = EditorState.transactionFilter.of((transaction) => {
   if (sameDocument(next.document, proposed) && next.cursor === transaction.newSelection.main.head) {
     return snapSelection(transaction);
   }
-  return editTransaction(transaction, next);
+  return editTransaction(transaction, next, typingEvent(event));
 });
 
 function snapSelection(transaction: Transaction): Transaction {
@@ -229,15 +229,19 @@ function singleChange(transaction: Transaction): { from: number; to: number; ins
   return count === 1 ? found : null;
 }
 
-function editTransaction(transaction: Transaction, next: Edit) {
+function editTransaction(transaction: Transaction, next: Edit, typing = false) {
   const cursor = Math.max(0, Math.min(next.cursor, next.document.text.length));
   return {
     changes: { from: 0, to: transaction.startState.doc.length, insert: next.document.text },
     selection: { anchor: cursor },
     effects: replaceLineTypes.of(next.document.lineTypes),
-    annotations: Transaction.userEvent.of("structure.skip"),
+    annotations: Transaction.userEvent.of(typing ? "input.type" : "structure.skip"),
     scrollIntoView: true,
   };
+}
+
+function typingEvent(event: string): boolean {
+  return event === "input.type" || event.startsWith("input.type.");
 }
 
 const completeSource: CompletionSource = (context) => {

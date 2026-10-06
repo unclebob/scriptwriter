@@ -27,8 +27,35 @@ describe("completion", () => {
     expect(completions(transition, transition.text.length)?.options).toContain("FADE OUT.");
   });
 
-  it("does not provide scene-prefix, location, or time completion", () => {
-    const scene = elementsDocument(normalizeElements([{ type: "scene", text: "INT." }]));
-    expect(completions(scene, scene.text.length)).toBeNull();
+  it("offers earlier scene headings, most recent first", () => {
+    const scenes = elementsDocument(
+      normalizeElements([
+        { type: "scene", text: "KITCHEN" },
+        { type: "action", text: "Bob waits." },
+        { type: "scene", text: "KITCHEN DOOR" },
+        { type: "action", text: "Rain." },
+        { type: "scene", text: "K" },
+      ]),
+    );
+    const current = scenes.elements.at(-1)!;
+    expect(completions(scenes, current.to)?.options).toEqual(["KITCHEN DOOR", "KITCHEN"]);
+  });
+
+  it("offers a scene heading as one whole line", () => {
+    const scenes = elementsDocument(
+      normalizeElements([
+        { type: "scene", text: "INT. KITCHEN - DAY" },
+        { type: "scene", text: "INT" },
+      ]),
+    );
+    const current = scenes.elements[1];
+    expect(completions(scenes, current.to)?.options).toEqual(["INT. KITCHEN - DAY"]);
+    const location = elementsDocument(
+      normalizeElements([
+        { type: "scene", text: "INT. KITCHEN - DAY" },
+        { type: "scene", text: "KIT" },
+      ]),
+    );
+    expect(completions(location, location.elements[1].to)).toBeNull();
   });
 });
