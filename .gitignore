@@ -7,3 +7,9 @@ src-tauri/target-sw/
 src-tauri/gen/
 .DS_Store
 *.log
+
+# BEGIN UML-VIEWER
+.uml-viewer/
+uml-viewer-log.txt
+# END UML-VIEWER
+examples/
