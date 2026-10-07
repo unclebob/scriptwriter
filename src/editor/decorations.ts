@@ -1,9 +1,9 @@
-import { StateField, type Range, type Transaction } from "@codemirror/state";
+import { EditorState, StateField, type Range, type Transaction } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { derive } from "../projections/derived";
 import { documentOf, metadataChanged } from "./state";
 
-class SceneNumber extends WidgetType {
+export class SceneNumber extends WidgetType {
   constructor(readonly label: string, readonly at: number) {
     super();
   }
@@ -36,7 +36,7 @@ class SceneNumber extends WidgetType {
   }
 }
 
-class PageRule extends WidgetType {
+export class PageRule extends WidgetType {
   constructor(readonly label: string) {
     super();
   }
@@ -61,7 +61,7 @@ class PageRule extends WidgetType {
   }
 }
 
-function buildDecorations(state: Parameters<typeof documentOf>[0]): DecorationSet {
+function buildDecorations(state: EditorState): DecorationSet {
   const screenplay = documentOf(state);
   const derived = derive(screenplay);
   const numbers = new Map(derived.scenes.map((scene) => [scene.from, scene.number]));
@@ -71,18 +71,26 @@ function buildDecorations(state: Parameters<typeof documentOf>[0]): DecorationSe
     ranges.push(Decoration.line({ class: `el-${element.type}` }).range(line.from));
     const number = element.type === "scene" ? numbers.get(element.from) : undefined;
     if (number !== undefined) {
+      const sceneSide = -1;
       ranges.push(
-        Decoration.widget({ widget: new SceneNumber(String(number), element.from), side: -1 }).range(element.from),
+        Decoration.widget({
+          widget: new SceneNumber(String(number), element.from),
+          side: sceneSide,
+        }).range(element.from),
       );
     }
   }
   for (const [index, source] of derived.pageStarts.entries()) {
-    const at = Math.max(0, Math.min(source, state.doc.length));
+    const at = Math.min(source, state.doc.length);
+    const pageLabel = String(index + 2);
+    const pageSide = -1;
+    const pageBlock = true;
     ranges.push(
-      Decoration.widget({ widget: new PageRule(String(index + 2)), side: -1, block: true }).range(at),
+      Decoration.widget({ widget: new PageRule(pageLabel), side: pageSide, block: pageBlock }).range(at),
     );
   }
-  return Decoration.set(ranges, true);
+  const sort = true;
+  return Decoration.set(ranges, sort);
 }
 
 export const scriptDecorations = StateField.define<DecorationSet>({

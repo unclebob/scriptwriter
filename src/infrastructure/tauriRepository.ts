@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { OpenedScript, ScriptRepository } from "./repository";
+import type { OpenedScript, ScriptRepository } from "../application/repository";
 
 export class TauriScriptRepository implements ScriptRepository {
   loadStartup(): Promise<OpenedScript> {

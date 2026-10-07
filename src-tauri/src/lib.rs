@@ -210,13 +210,7 @@ fn active_root_of(slot: &ActiveScript) -> Result<PathBuf, String> {
 }
 
 fn active_root(state: &State<'_, ActiveScript>) -> Result<PathBuf, String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "Script state is unavailable.".to_string())?
-        .active
-        .clone()
-        .ok_or_else(|| "No script is open.".to_string())
+    active_root_of(state)
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf, String> {
@@ -358,16 +352,10 @@ fn export_kind(extension: &str) -> Result<(&'static str, &'static str), String> 
 }
 
 fn safe_file_name(suggested: &str, extension: &str) -> String {
-    let fallback = format!("Untitled.{extension}");
     let Some(name) = Path::new(suggested).file_name() else {
-        return fallback;
+        return format!("Untitled.{extension}");
     };
-    let name = name.to_string_lossy();
-    if name.is_empty() || name == "." || name == ".." {
-        fallback
-    } else {
-        name.into_owned()
-    }
+    name.to_string_lossy().into_owned()
 }
 
 fn spec_script_path() -> Option<PathBuf> {
@@ -376,11 +364,15 @@ fn spec_script_path() -> Option<PathBuf> {
 }
 
 fn script_from_args() -> Result<Option<PathBuf>, String> {
-    script_from(std::env::args().skip(1))
+    let mut args = std::env::args();
+    args.next();
+    script_from(args)
 }
 
 fn help_requested() -> bool {
-    help_flag(std::env::args().skip(1))
+    let mut args = std::env::args();
+    args.next();
+    help_flag(args)
 }
 
 fn help_flag<I>(args: I) -> bool
@@ -516,6 +508,18 @@ mod tests {
         assert!(!help_flag([dir.to_str().unwrap()]));
         assert!(include_str!("../../README.md").contains(USAGE.trim_end()));
         assert!(spec_script_path().unwrap().ends_with("spec-script"));
+    }
+
+    #[test]
+    fn distinguishes_temporary_files_and_ignores_the_program_name() {
+        let parent = std::env::temp_dir();
+        let name = std::ffi::OsStr::new("script.json");
+        assert_ne!(temporary_path(&parent, name), temporary_path(&parent, name));
+        assert!(script_from_args().unwrap().is_none());
+        assert!(!help_requested());
+        assert!(active_root_of(&ActiveScript::default())
+            .unwrap_err()
+            .contains("No script is open."));
     }
 
     #[test]

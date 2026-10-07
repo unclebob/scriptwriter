@@ -6,11 +6,16 @@ type Metadata = { lineTypes: readonly LineType[]; revision: number };
 
 export const replaceLineTypes = StateEffect.define<readonly LineType[]>();
 
+function metadata(lineTypes: readonly LineType[]): Metadata {
+  const revision = 0;
+  return { lineTypes, revision };
+}
+
 const metadataField = StateField.define<Metadata>({
-  create: (state) => ({ lineTypes: Array.from({ length: state.doc.lines }, () => null), revision: 0 }),
+  create: (state) => metadata(Array.from({ length: state.doc.lines }, () => null)),
   update(value, transaction) {
     const effect = transaction.effects.find((item) => item.is(replaceLineTypes));
-    const lineTypes = effect?.value ?? value.lineTypes;
+    const lineTypes = effect === undefined ? value.lineTypes : effect.value;
     const changed = transaction.docChanged || effect !== undefined;
     if (transaction.newDoc.lines !== lineTypes.length) {
       throw new Error("A screenplay transaction changed lines without matching element metadata.");
@@ -35,7 +40,7 @@ export function documentOf(state: EditorState): DocumentSnapshot {
 
 export function metadataExtensions(document: EditorDocument): Extension[] {
   return [
-    metadataField.init(() => ({ lineTypes: [...document.lineTypes], revision: 0 })),
+    metadataField.init(() => metadata([...document.lineTypes])),
     invertedEffects.of((transaction) => {
       if (!metadataChanged(transaction)) return [];
       return [replaceLineTypes.of(transaction.startState.field(metadataField).lineTypes)];

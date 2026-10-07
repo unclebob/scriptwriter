@@ -134,6 +134,9 @@ function matching(pool: readonly string[], typed: string, from: number, to: numb
 }
 
 function endOf(text: string, from: number, closer: string): number {
-  const end = text.indexOf(closer, from);
-  return end < 0 ? text.length : end + closer.length;
+  const rest = text.slice(from);
+  const pieces = rest.split(closer);
+  if (pieces.length === 1) return text.length;
+  const head = pieces[0];
+  return from + head.length + closer.length;
 }

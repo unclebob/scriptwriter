@@ -56,7 +56,7 @@ export function wrapText(text: string, width: number): string[] {
 
 type Sheet = { pages: Placed[][]; used: number };
 
-type Remainder = { lines: string[]; chars: number[]; continuation: boolean; done: boolean };
+type Remainder = { lines: string[]; chars: number[]; continuation: boolean };
 
 export function paginate(document: DocumentSnapshot): Placed[][] {
   const blocks = blocksOf(document);
@@ -68,13 +68,10 @@ export function paginate(document: DocumentSnapshot): Placed[][] {
 }
 
 function finished(pages: Placed[][]): Placed[][] {
-  if (pages.length > 1 && lastPageEmpty(pages)) pages.pop();
+  const last = pages[pages.length - 1];
+  if (last.length === 0) pages.pop();
   if (pages.length === 0) return [[]];
   return pages;
-}
-
-function lastPageEmpty(pages: Placed[][]): boolean {
-  return pages[pages.length - 1].length === 0;
 }
 
 function placeBlock(sheet: Sheet, blocks: readonly Block[], index: number) {
@@ -100,15 +97,15 @@ function breakForAct(sheet: Sheet, block: Block): number {
 
 function heldWithNext(sheet: Sheet, blocks: readonly Block[], index: number, blanks: number): boolean {
   const block = blocks[index];
-  const next = blocks[index + 1] ?? null;
+  const next = blocks[index + 1];
   if (!canHold(sheet, block, next)) return false;
   if (keepPage(sheet, blocks, index, blanks)) return false;
   newPage(sheet);
   return true;
 }
 
-function canHold(sheet: Sheet, block: Block, next: Block | null): next is Block {
-  return keepsWithNext(block.type) && next !== null && sheet.used > 0;
+function canHold(sheet: Sheet, block: Block, next: Block | undefined): next is Block {
+  return keepsWithNext(block.type) && next !== undefined && sheet.used !== 0;
 }
 
 function keepPage(sheet: Sheet, blocks: readonly Block[], index: number, blanks: number): boolean {
@@ -130,17 +127,14 @@ function followedLines(blocks: readonly Block[], index: number): number {
 function writeBlock(sheet: Sheet, block: Block, lines: string[], chars: number[], blanks: number) {
   let rest = lines;
   let offsets = chars;
-  let pending = blanks;
   let continuation = false;
   let first = true;
-  while (rest.length > 0) {
-    const step = nextSlice(sheet, block, rest, offsets, pending, continuation, first);
+  while (rest.length !== 0) {
+    const step = nextSlice(sheet, block, rest, offsets, blanks, continuation, first);
     rest = step.lines;
     offsets = step.chars;
     continuation = step.continuation;
-    pending = 0;
     first = false;
-    if (step.done) return;
   }
 }
 
@@ -164,7 +158,6 @@ function placeBlanks(sheet: Sheet, blanks: number) {
     put(sheet, { text: "", role: "blank" });
     left -= 1;
   }
-  if (left > 0) newPage(sheet);
 }
 
 function takeLines(sheet: Sheet, block: Block, lines: string[], chars: number[], continuation: boolean): Remainder {
@@ -172,13 +165,13 @@ function takeLines(sheet: Sheet, block: Block, lines: string[], chars: number[],
   const budget = LINES_PER_PAGE - sheet.used - (continued ? 1 : 0);
   if (lines.length <= budget) {
     writeFit(sheet, block, lines, chars, continued);
-    return { lines: [], chars: [], continuation, done: true };
+    return { lines: [], chars: [], continuation };
   }
-  return breakLines(sheet, block, lines, chars, budget, continued);
+  return breakLines(sheet, block, lines, chars, budget, continued, continuation);
 }
 
 function writeFit(sheet: Sheet, block: Block, lines: string[], chars: number[], continued: boolean) {
-  if (continued) put(sheet, contd(block, chars[0] ?? 0));
+  if (continued) put(sheet, contd(block, chars[0]));
   putLines(block, lines, chars, (line) => put(sheet, line));
 }
 
@@ -189,9 +182,10 @@ function breakLines(
   chars: number[],
   budget: number,
   continued: boolean,
+  continuation: boolean,
 ): Remainder {
   if (block.type === "dialogue") return breakDialogue(sheet, block, lines, chars, budget, continued);
-  return breakProse(sheet, block, lines, chars, budget);
+  return { ...breakProse(sheet, block, lines, chars, budget), continuation };
 }
 
 function breakDialogue(
@@ -205,25 +199,31 @@ function breakDialogue(
   const room = budget - 1;
   if (room < 1) {
     newPage(sheet);
-    return { lines, chars, continuation: continued, done: false };
+    return { lines, chars, continuation: continued };
   }
   writeFit(sheet, block, lines.slice(0, room), chars.slice(0, room), continued);
   put(sheet, { text: "(MORE)", role: "more", source: moreSource(block, chars, room) });
   newPage(sheet);
-  return { lines: lines.slice(room), chars: chars.slice(room), continuation: true, done: false };
+  return { lines: lines.slice(room), chars: chars.slice(room), continuation: true };
 }
 
 function moreSource(block: Block, chars: number[], room: number): number {
-  return sourceAt(block, chars[room] ?? block.lines.join("").length);
+  return sourceAt(block, chars[room]);
 }
 
-function breakProse(sheet: Sheet, block: Block, lines: string[], chars: number[], budget: number): Remainder {
-  if (budget < 1) {
+function breakProse(
+  sheet: Sheet,
+  block: Block,
+  lines: string[],
+  chars: number[],
+  budget: number,
+): { lines: string[]; chars: number[] } {
+  if (budget === 0) {
     newPage(sheet);
-    return { lines, chars, continuation: false, done: false };
+    return { lines, chars };
   }
   putLines(block, lines.slice(0, budget), chars.slice(0, budget), (line) => put(sheet, line));
-  return { lines: lines.slice(budget), chars: chars.slice(budget), continuation: false, done: false };
+  return { lines: lines.slice(budget), chars: chars.slice(budget) };
 }
 
 function put(sheet: Sheet, line: Placed) {
@@ -309,7 +309,7 @@ function contd(block: Block, charIndex: number): Placed {
 
 function putLines(block: Block, lines: string[], chars: number[], put: (line: Placed) => void) {
   for (let i = 0; i < lines.length; i += 1) {
-    put({ text: lines[i], role: block.type, source: sourceAt(block, chars[i] ?? 0) });
+    put({ text: lines[i], role: block.type, source: sourceAt(block, chars[i]) });
   }
 }
 

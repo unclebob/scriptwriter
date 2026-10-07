@@ -220,8 +220,10 @@ function insertAround(
   to: number,
   incoming: readonly ScriptElement[],
 ): Edit {
-  if (isOpeningPlaceholder(document)) return replaceElements(document, 0, 1, incoming);
-  const host = elementAt(document, from) ?? previousElement(document, Math.max(from, to));
+  if (isOpeningPlaceholder(document)) {
+    return replaceElements(document, 0, storableElements(document).length, incoming);
+  }
+  const host = elementAt(document, from) || previousElement(document, Math.max(from, to));
   return replaceElements(document, insertionIndex(host), 0, incoming);
 }
 
@@ -237,15 +239,13 @@ export function insertPlainText(
 ): Edit | null {
   const normalized = pasted.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (!normalized.includes("\n")) return null;
+  const lines = normalized.split("\n");
   const elements: ScriptElement[] = [];
-  let blank = false;
-  for (const text of normalized.split("\n")) {
-    if (text === "") {
-      blank = true;
-      continue;
-    }
-    elements.push({ type: "action", text, blanksBefore: elements.length === 0 ? 0 : blank ? 1 : 0 });
-    blank = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const text = lines[index];
+    if (text === "") continue;
+    const separated = lines[index - 1] === "";
+    elements.push({ type: "action", text, blanksBefore: separated ? 1 : 0 });
   }
   return insertElements(document, from, to, elements);
 }
@@ -262,7 +262,7 @@ export function replaceMatches(
   const built: ScriptElement[] = [];
   let cursorAt: { index: number; offset: number } | null = null;
   for (const element of document.elements) {
-    cursorAt = applyGroup(element, grouped.get(element.index), built) ?? cursorAt;
+    cursorAt = applyGroup(element, grouped.get(element.index), built) || cursorAt;
   }
   return replacedDocument(document, built, cursorAt, fallbackCursor);
 }
@@ -272,7 +272,7 @@ function groupChanges(document: DocumentSnapshot, changes: readonly TextChange[]
   for (const change of changes.map(normalizeChange).sort(byPosition)) {
     const element = elementHolding(document, change);
     if (!element) continue;
-    const list = grouped.get(element.index) ?? [];
+    const list = grouped.get(element.index) || [];
     list.push(change);
     grouped.set(element.index, list);
   }
@@ -328,14 +328,13 @@ function rewriteElement(
   const start = built.length;
   pieces.forEach((raw, index) => pushPiece(built, element, raw, index));
   const located = locateOffset(rewritten.text, rewritten.cursor);
-  return {
-    index: start + located.part,
-    offset: formattedOffset(element.type, pieceAt(pieces, located.part), located.offset),
-  };
+  const index = start + located.part;
+  const offset = formattedOffset(element.type, pieceAt(pieces, located.part), located.offset);
+  return { index, offset };
 }
 
 function pieceAt(pieces: readonly string[], part: number): string {
-  return pieces[part] ?? "";
+  return pieces[part];
 }
 
 function pushPiece(built: ScriptElement[], element: PositionedElement, raw: string, index: number) {
@@ -346,7 +345,7 @@ function pushPiece(built: ScriptElement[], element: PositionedElement, raw: stri
   });
 }
 
-function pieceBlank(element: PositionedElement, index: number): 0 | 1 {
+function pieceBlank(element: PositionedElement, index: number) {
   return index === 0 ? element.blanksBefore : blanksBefore(element.type);
 }
 
@@ -365,8 +364,8 @@ function replacedCursor(
   placed: { index: number; offset: number } | null,
   fallbackCursor: number,
 ): number {
-  const target = placed ? next.elements[placed.index] : undefined;
-  if (!target || !placed) return fallbackCursor;
+  if (!placed) return fallbackCursor;
+  const target = next.elements[placed.index];
   return Math.min(target.to, Math.max(target.from, target.from + placed.offset));
 }
 
@@ -394,8 +393,7 @@ function locateOffset(text: string, cursor: number): { part: number; offset: num
     offset -= line.length + 1;
     part += 1;
   }
-  const last = lines.length - 1;
-  return { part: last, offset: lines[last]?.length ?? 0 };
+  throw new Error("Cursor is outside the edited text.");
 }
 
 function formattedOffset(type: ElementType, raw: string, offset: number): number {
@@ -423,11 +421,10 @@ export function selectedElements(
   from: number,
   to: number,
 ): ScriptElement[] {
-  return elementsCovered(document, from, to).map(({ type, text, blanksBefore }, index) => ({
-    type,
-    text,
-    blanksBefore: index === 0 ? 0 : blanksBefore,
-  }));
+  return elementsCovered(document, from, to).map(({ type, text, blanksBefore }, index) => {
+    const blank = index === 0 ? 0 : blanksBefore;
+    return { type, text, blanksBefore: blank };
+  });
 }
 
 export function afterInput(document: DocumentSnapshot, cursor: number): Edit {
@@ -438,7 +435,7 @@ export function afterInput(document: DocumentSnapshot, cursor: number): Edit {
   const offset = visibleOffset(element, cursor);
   const lines = editableLines(document);
   lines[element.line].text = formatted;
-  const next = result(lines, 0);
+  const next = result(lines, cursor);
   const fresh = snapshot(next.document).elements[element.index];
   return { document: next.document, cursor: placeOffset(fresh, offset) };
 }
@@ -453,9 +450,9 @@ function convertLine(
   const lines = editableLines(document);
   lines[element.line] = { type, text: convertText(element.type, type, element.text) };
   const moved = normalizeBlanks(lines, element.line, type);
-  const next = result(lines, 0);
-  const fresh = snapshot(next.document).elements.find((item) => item.line === moved);
-  return { document: next.document, cursor: fresh ? placeOffset(fresh, offset) : 0 };
+  const next = result(lines, cursor);
+  const fresh = snapshot(next.document).elements.find((item) => item.line === moved) as PositionedElement;
+  return { document: next.document, cursor: placeOffset(fresh, offset) };
 }
 
 function insertAfter(
@@ -509,37 +506,30 @@ function storedIncoming(incoming: readonly ScriptElement[], index: number): Scri
   }));
 }
 
-function keptBlank(element: ScriptElement, offset: number, index: number): 0 | 1 {
-  if (offset === 0 && index > 0) return blanksBefore(element.type);
+function keptBlank(element: ScriptElement, offset: number, index: number) {
+  if (offset === 0 && index !== 0) return blanksBefore(element.type);
   return element.blanksBefore;
 }
 
 function finishReplace(document: DocumentSnapshot, elements: ScriptElement[], index: number, incoming: number): Edit {
   const nextDocument = editorDocument(normalizeElements(elements));
-  const next = snapshot(nextDocument, document.revision + 1);
+  const next = snapshot(nextDocument, document.revision);
   if (incoming > 0) return { document: nextDocument, cursor: insertedEnd(next, index, incoming) };
   return { document: nextDocument, cursor: cursorAfterRemoval(next, index) };
 }
 
 function insertedEnd(next: DocumentSnapshot, index: number, incoming: number): number {
-  const last = next.elements[index + incoming - 1];
-  return last ? last.to : 0;
+  return next.elements[index + incoming - 1].to;
 }
 
 function cursorAfterRemoval(next: DocumentSnapshot, index: number): number {
-  return elementEnd(next.elements[index - 1]) ?? elementStart(next.elements[index]);
-}
-
-function elementEnd(element: PositionedElement | undefined): number | undefined {
-  return element?.to;
-}
-
-function elementStart(element: PositionedElement | undefined): number {
-  return element?.from ?? 0;
+  const previous = next.elements[index - 1];
+  if (previous) return previous.to;
+  return next.elements[index].from;
 }
 
 function placeLine(lines: EditableLine[], after: number, type: ElementType, text: string): Edit {
-  const blanks = after < 0 ? 0 : blanksBefore(type);
+  const blanks = blanksBefore(type);
   const addition: EditableLine[] = [];
   for (let count = 0; count < blanks; count += 1) addition.push({ text: "", type: null });
   addition.push({ text: formatText(type, text), type });
@@ -560,9 +550,8 @@ function separatorCount(lines: readonly EditableLine[], index: number): number {
 }
 
 function adjustSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
-  if (count > want) return dropSeparators(lines, index, count, want);
-  if (count < want) return addSeparators(lines, index, count, want);
-  return index;
+  if (count < want) return addSeparators(lines, index, want);
+  return dropSeparators(lines, index, count, want);
 }
 
 function dropSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
@@ -570,14 +559,14 @@ function dropSeparators(lines: EditableLine[], index: number, count: number, wan
   return index - (count - want);
 }
 
-function addSeparators(lines: EditableLine[], index: number, count: number, want: number): number {
-  const blanks = Array.from({ length: want - count }, () => ({ text: "", type: null as LineType }));
+function addSeparators(lines: EditableLine[], index: number, want: number): number {
+  const blanks = Array.from({ length: want }, () => ({ text: "", type: null as LineType }));
   lines.splice(index, 0, ...blanks);
   return index + blanks.length;
 }
 
 function result(lines: EditableLine[], cursor: number): Edit {
-  if (!lines.some((line) => line.type !== null)) return { document: editorDocument([]), cursor: 0 };
+  if (!lines.some((line) => line.type !== null)) return { document: editorDocument([]), cursor };
   trimSeparators(lines);
   return {
     document: { text: lines.map((line) => line.text).join("\n"), lineTypes: lines.map((line) => line.type) },
@@ -586,7 +575,7 @@ function result(lines: EditableLine[], cursor: number): Edit {
 }
 
 function trimSeparators(lines: EditableLine[]) {
-  while (lines.length > 1 && lines[lines.length - 1].type === null) lines.pop();
+  while (lines[lines.length - 1].type === null) lines.pop();
 }
 
 function editableLines(document: EditorDocument): EditableLine[] {
@@ -619,22 +608,18 @@ function lineCursor(lines: EditableLine[], index: number, empty: boolean): numbe
     text: lines.map((line) => line.text).join("\n"),
     lineTypes: lines.map((line) => line.type),
   });
-  const element = document.elements.find((item) => item.line === index);
-  if (!element) return 0;
+  const element = document.elements.find((item) => item.line === index) as PositionedElement;
   return empty ? typingAt(element) : textStart(element);
 }
 
 function textStart(element: PositionedElement): number {
-  if (element.type === "parenthetical" && element.text.startsWith("(")) {
-    return Math.min(element.from + 1, element.to);
-  }
   return element.from;
 }
 
 function typingCursor(lines: EditableLine[], index: number): number {
   const document = snapshot({ text: lines.map((line) => line.text).join("\n"), lineTypes: lines.map((line) => line.type) });
-  const element = document.elements.find((item) => item.line === index);
-  return element ? typingAt(element) : 0;
+  const element = document.elements.find((item) => item.line === index) as PositionedElement;
+  return typingAt(element);
 }
 
 function typingAt(element: PositionedElement): number {
@@ -656,7 +641,7 @@ function visibleOffset(element: PositionedElement, cursor: number): number {
 function placeOffset(element: PositionedElement, offset: number): number {
   if (element.type === "parenthetical" && element.text.startsWith("(")) {
     const end = element.text.endsWith(")") ? element.text.length - 1 : element.text.length;
-    return element.from + 1 + Math.min(offset, Math.max(0, end - 1));
+    return element.from + 1 + Math.min(offset, end - 1);
   }
   return element.from + Math.min(offset, element.text.length);
 }

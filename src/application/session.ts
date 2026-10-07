@@ -1,6 +1,6 @@
 import { elementsDocument, storableElements, type DocumentSnapshot } from "../domain/document";
 import { serializeScript, storedScript, type Script } from "../domain/script";
-import type { ScriptRepository } from "../infrastructure/repository";
+import type { ScriptRepository } from "./repository";
 import { derive } from "../projections/derived";
 import { scenesCsv } from "../projections/scenes";
 
@@ -90,9 +90,10 @@ export class ScriptSession {
     if (this.holdInput) return;
     const script = this.stateValue.script;
     if (!script || script[field] === value) return;
+    const revision = this.stateValue.revision + 1;
     this.setState({
       script: { ...script, [field]: value },
-      revision: this.stateValue.revision + 1,
+      revision,
       status: "ready",
       error: null,
     });
@@ -105,7 +106,8 @@ export class ScriptSession {
 
   async flush(): Promise<void> {
     this.clearTimer();
-    if (!this.stateValue.script || !this.stateValue.document) return;
+    if (!this.stateValue.script) return;
+    if (!this.stateValue.document) return;
     if (!this.saving) {
       this.saving = this.drain().finally(() => {
         this.saving = null;
@@ -146,12 +148,14 @@ export class ScriptSession {
     this.generation += 1;
     this.clearTimer();
     const script = storedScript(opened.root, opened.text);
+    const revision = 0;
+    const savedRevision = 0;
     this.stateValue = {
       status: "ready",
       script,
       document: elementsDocument(script.elements),
-      revision: 0,
-      savedRevision: 0,
+      revision,
+      savedRevision,
       error: null,
     };
     this.emit();
@@ -178,8 +182,10 @@ export class ScriptSession {
   }
 
   private current(): { script: Script; document: DocumentSnapshot } {
-    const { script, document } = this.stateValue;
-    if (!script || !document) throw new Error("No script is open.");
+    const script = this.stateValue.script;
+    const document = this.stateValue.document;
+    if (!script) throw new Error("No script is open.");
+    if (!document) throw new Error("No script is open.");
     return { script, document };
   }
 

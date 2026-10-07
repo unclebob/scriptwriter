@@ -35,8 +35,9 @@ const RETURN_NEXT: Record<ElementType, ElementType> = {
   act: "scene",
 };
 
-export function blanksBefore(type: ElementType): 0 | 1 {
-  return type === "dialogue" || type === "parenthetical" ? 0 : 1;
+export function blanksBefore(type: ElementType) {
+  if (type === "dialogue" || type === "parenthetical") return 0;
+  return 1;
 }
 
 export function cueName(visible: string): string {
@@ -68,12 +69,14 @@ export function formatText(type: ElementType, text: string): string {
 }
 
 export function convertText(from: ElementType, to: ElementType, text: string): string {
-  const carried = from === "parenthetical" && to !== "parenthetical" ? stripParenthetical(text) : text;
+  const leavingParenthetical = from === "parenthetical" && to !== "parenthetical";
+  const carried = leavingParenthetical ? stripParenthetical(text) : text;
   return formatText(to, carried);
 }
 
 function stripParenthetical(text: string): string {
-  if (!text.startsWith("(") || !text.endsWith(")")) return text;
+  if (!text.startsWith("(")) return text;
+  if (!text.endsWith(")")) return text;
   return text.slice(1, -1);
 }
 

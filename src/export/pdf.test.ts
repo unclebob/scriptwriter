@@ -1,7 +1,24 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { describe, expect, it } from "vitest";
 import { elementsDocument, normalizeElements } from "../domain/document";
-import { renderPdf } from "./pdf";
+import { rgb } from "pdf-lib";
+import {
+  centeredX,
+  contactLines,
+  contactPosition,
+  creditStart,
+  headerLines,
+  extendRun,
+  ink,
+  lineY,
+  nextCreditY,
+  pageNumberPosition,
+  renderPdf,
+  sceneNumberPosition,
+  scriptPageNumber,
+  titleTop,
+  titleUnderline,
+} from "./pdf";
 
 const header = {
   title: "The Kettle",
@@ -123,8 +140,53 @@ describe("PDF export", () => {
     expect(more.x + more.width / 2).toBeCloseTo(columnCenter, 0);
   });
 
+  it("centers the title and subsets the font", async () => {
+    const document = elementsDocument(normalizeElements([{ type: "action", text: "Hi." }]));
+    const bytes = await renderPdf(header, document);
+    expect(bytes.length).toBeLessThan(200_000);
+    expect(Buffer.from(bytes).includes(Buffer.from("ObjStm"))).toBe(false);
+    const items = await placedText(bytes.slice());
+    const title = items.find((item) => item.str.includes("KETTLE"));
+    if (!title) throw new Error(items.map((item) => item.str).join("|"));
+    const row = items.filter((item) => Math.abs(item.y - title.y) < 0.5);
+    const left = Math.min(...row.map((item) => item.x));
+    const right = Math.max(...row.map((item) => item.x + item.width));
+    expect((left + right) / 2).toBeCloseTo(612 / 2, 1);
+  });
+
+  it("underlines the title two points below it in black", () => {
+    expect(titleUnderline(10, 20, 30)).toEqual({ startX: 10, endX: 40, y: 18, thickness: 1 });
+    expect(ink()).toEqual(rgb(0, 0, 0));
+  });
+
+  it("places the title, credits, page number, and contact from the screenplay margins", () => {
+    expect(titleTop()).toBeCloseTo(792 - 3.2 * 72, 5);
+    expect(centeredX(100)).toBe(256);
+    expect(creditStart(500)).toBe(464);
+    expect(nextCreditY(464)).toBe(440);
+    expect(headerLines({ credit: "Written by", author: "", draft: "October" })).toEqual(["Written by", "October"]);
+    expect(contactLines("A\n\nBeta")).toEqual(["A", "Beta"]);
+    expect(contactPosition(2, 0)).toEqual({ x: 1.5 * 72, y: 84 });
+    expect(contactPosition(2, 1)).toEqual({ x: 1.5 * 72, y: 72 });
+    expect(scriptPageNumber(0)).toBe(1);
+    expect(scriptPageNumber(1)).toBe(2);
+    expect(pageNumberPosition(10)).toEqual({ x: 7.5 * 72 - 10, y: 756 });
+    expect(sceneNumberPosition(10, "left")).toBeCloseTo(1.35 * 72 - 10, 5);
+    expect(sceneNumberPosition(10, "right")).toBeCloseTo(7.65 * 72, 5);
+    expect(lineY(0)).toBe(708);
+    expect(lineY(2)).toBe(684);
+    const runs: { key: string; text: string }[] = [];
+    extendRun(runs, "mono", "T");
+    extendRun(runs, "mono", "e");
+    extendRun(runs, "other", "a");
+    expect(runs).toEqual([
+      { key: "mono", text: "Te" },
+      { key: "other", text: "a" },
+    ]);
+  });
+
   it("reports an unsupported glyph instead of silently replacing it", async () => {
     const document = elementsDocument(normalizeElements([{ type: "action", text: "漢" }]));
-    await expect(renderPdf(header, document)).rejects.toThrow(/does not support.*U\+/);
+    await expect(renderPdf(header, document)).rejects.toThrow("U+6F22");
   });
 });

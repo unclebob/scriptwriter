@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { elementsDocument, normalizeElements, type ScriptElement } from "../domain/document";
 import { pageStarts, paginate } from "./layout";
-import { outline, safeCsvField, sceneRows, scenesCsv } from "./scenes";
+import { outline, safeCsvField, sceneRows, scenesCsv, type SceneRow } from "./scenes";
 
 function document(elements: readonly Omit<ScriptElement, "blanksBefore">[]) {
   return elementsDocument(normalizeElements(elements));
@@ -67,5 +67,35 @@ describe("scene projection", () => {
     ]));
     const locations = scenesCsv(untitled).trim().split("\n").slice(1).map((line) => line.split(",")[0]);
     expect(locations).toEqual(["ROOM", "room", ""]);
+  });
+
+  it("counts a scene that begins exactly where a page begins", () => {
+    const exact = document([{ type: "scene", text: "ROOM" }]);
+    expect(sceneRows(exact, [exact.elements[0].from])[0].page).toBe(2);
+  });
+
+  it("lists each actor once and stops before the next scene", () => {
+    const room = document([
+      { type: "scene", text: "ROOM" },
+      { type: "character", text: "BOB" },
+      { type: "character", text: "BOB (V.O.)" },
+      { type: "character", text: "()" },
+      { type: "character", text: "ANN" },
+      { type: "scene", text: "HALL" },
+      { type: "character", text: "MAL" },
+    ]);
+    expect(sceneRows(room, [])[0].actors).toEqual(["BOB", "ANN"]);
+  });
+
+  it("sorts locations alphabetically, empty ones last, and equal locations by number", () => {
+    const row = (number: number, location: string): SceneRow => ({
+      number, page: 1, act: "", location, actors: [], text: location, from: number,
+    });
+    const locations = (rows: SceneRow[]) =>
+      scenesCsv(rows).trim().split("\n").slice(1).map((line) => line.split(",").slice(0, 2).join(","));
+    expect(locations([row(1, "Z"), row(2, "A")])).toEqual(["A,2", "Z,1"]);
+    expect(locations([row(2, "A"), row(1, "Z")])).toEqual(["A,2", "Z,1"]);
+    expect(locations([row(2, "ROOM"), row(1, "ROOM")])).toEqual(["ROOM,1", "ROOM,2"]);
+    expect(locations([row(1, "B"), row(2, "")])).toEqual(["B,1", ",2"]);
   });
 });

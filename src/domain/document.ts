@@ -3,7 +3,7 @@ import { blanksBefore, type ElementType } from "./elements";
 export type ScriptElement = {
   type: ElementType;
   text: string;
-  blanksBefore: 0 | 1;
+  blanksBefore: number;
 };
 
 export type LineType = ElementType | null;
@@ -49,27 +49,36 @@ export function editorDocument(elements: readonly ScriptElement[]): EditorDocume
   return { text: lines.join("\n"), lineTypes };
 }
 
-export function snapshot(document: EditorDocument, revision = 0): DocumentSnapshot {
+export function snapshot(document: EditorDocument, revision?: number): DocumentSnapshot {
+  const storedRevision = revision === undefined ? 0 : revision;
   const lines = sourceLines(document);
   const elements: PositionedElement[] = [];
   let blanks = 0;
+  let started = false;
   for (const line of lines) {
     if (line.type === null) {
-      blanks += 1;
+      if (started) blanks += 1;
       continue;
     }
+    const blanksBefore = storedBlanks(blanks);
     elements.push({
       type: line.type,
       text: line.text,
-      blanksBefore: elements.length === 0 ? 0 : blanks > 0 ? 1 : 0,
+      blanksBefore,
       index: elements.length,
       line: line.number,
       from: line.from,
       to: line.to,
     });
+    started = true;
     blanks = 0;
   }
-  return { ...document, lineTypes: [...document.lineTypes], revision, elements };
+  return { ...document, lineTypes: [...document.lineTypes], revision: storedRevision, elements };
+}
+
+function storedBlanks(blanks: number) {
+  if (blanks > 0) return 1;
+  return 0;
 }
 
 export function sourceLines(document: EditorDocument): SourceLine[] {
@@ -93,7 +102,9 @@ export function storableElements(document: DocumentSnapshot): ScriptElement[] {
 }
 
 export function isOpeningPlaceholder(document: DocumentSnapshot): boolean {
-  return document.elements.length === 1 && document.elements[0].type === "scene" && document.elements[0].text === "";
+  if (document.elements.length !== 1) return false;
+  const element = document.elements[0];
+  return element.type === "scene" && element.text === "";
 }
 
 export function elementAt(document: DocumentSnapshot, cursor: number): PositionedElement | null {
@@ -105,15 +116,17 @@ export function elementAt(document: DocumentSnapshot, cursor: number): Positione
 
 export function lineAt(document: EditorDocument, cursor: number): SourceLine {
   const lines = sourceLines(document);
-  const clipped = Math.max(0, Math.min(cursor, document.text.length));
+  const clipped = Math.max(0, cursor);
   for (const line of lines) {
     if (clipped >= line.from && clipped <= line.to) return line;
   }
-  return lines[lines.length - 1];
+  const last = lines.length - 1;
+  return lines[last];
 }
 
-export function elementsDocument(elements: readonly ScriptElement[], revision = 0): DocumentSnapshot {
-  return snapshot(editorDocument(elements), revision);
+export function elementsDocument(elements: readonly ScriptElement[], revision?: number): DocumentSnapshot {
+  const storedRevision = revision === undefined ? 0 : revision;
+  return snapshot(editorDocument(elements), storedRevision);
 }
 
 export function normalizeElements(
@@ -122,6 +135,13 @@ export function normalizeElements(
   return elements.map((element, index) => ({
     type: element.type,
     text: element.text,
-    blanksBefore: index === 0 ? 0 : element.blanksBefore === undefined ? blanksBefore(element.type) : element.blanksBefore > 0 ? 1 : 0,
+    blanksBefore: normalizedBlanks(index, element.blanksBefore, element.type),
   }));
+}
+
+function normalizedBlanks(index: number, blanks: number | undefined, type: ElementType) {
+  if (index === 0) return 0;
+  if (blanks === undefined) return blanksBefore(type);
+  if (blanks > 0) return 1;
+  return 0;
 }

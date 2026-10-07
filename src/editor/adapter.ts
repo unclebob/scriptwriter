@@ -104,18 +104,23 @@ function dispatchTo(view: EditorView, hooks: EditorHooks, transaction: Transacti
 
 function stateFor(document: EditorDocument, host: globalThis.Document): EditorState {
   const anchor = openingCursor(document);
+  const editable = true;
+  const activateOnTyping = true;
+  const completionKeys = false;
+  const body: HTMLElement | null = host.body;
+  const tooltipParent = body === null ? undefined : body;
   return EditorState.create({
     doc: document.text,
     selection: { anchor },
     extensions: [
       ...metadataExtensions(document),
-      editableCompartment.of(EditorView.editable.of(true)),
+      editableCompartment.of(EditorView.editable.of(editable)),
       history(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "true" }),
       EditorView.domEventHandlers({ copy: copyElements, paste: pasteElements }),
-      autocompletion({ override: [completeSource], activateOnTyping: true, defaultKeymap: false }),
-      tooltips({ parent: host.body ?? undefined, tooltipSpace: completionTooltipSpace }),
+      autocompletion({ override: [completeSource], activateOnTyping, defaultKeymap: completionKeys }),
+      tooltips({ parent: tooltipParent, tooltipSpace: completionTooltipSpace }),
       scriptTheme,
       scriptDecorations,
       normalizeInput,
@@ -160,7 +165,7 @@ const scriptTheme = EditorView.theme({
 
 /** The rectangle the completion menu may occupy: the window, and no further than the page stage. */
 export function completionBounds(windowBox: Rect, stageBox: Rect | null): Rect {
-  const limit = stageBox ?? windowBox;
+  const limit = stageBox === null ? windowBox : stageBox;
   return {
     top: Math.max(windowBox.top, limit.top),
     left: Math.max(windowBox.left, limit.left),
@@ -169,13 +174,19 @@ export function completionBounds(windowBox: Rect, stageBox: Rect | null): Rect {
   };
 }
 
-function completionTooltipSpace(view: EditorView): Rect {
+export function completionTooltipSpace(view: EditorView): Rect {
   const root = view.dom.ownerDocument.documentElement;
-  const bounds = completionBounds(
-    { top: 0, left: 0, bottom: root.clientHeight, right: root.clientWidth },
-    stageRect(view.dom.closest(".stage")),
-  );
-  return { top: bounds.top + 4, left: bounds.left + 4, bottom: bounds.bottom - 4, right: bounds.right - 4 };
+  const top = 0;
+  const left = 0;
+  const windowBox = { top, left, bottom: root.clientHeight, right: root.clientWidth };
+  const stage = stageRect(view.dom.closest(".stage"));
+  const bounds = completionBounds(windowBox, stage);
+  const pad = 4;
+  const paddedTop = bounds.top + pad;
+  const paddedLeft = bounds.left + pad;
+  const paddedBottom = bounds.bottom - pad;
+  const paddedRight = bounds.right - pad;
+  return { top: paddedTop, left: paddedLeft, bottom: paddedBottom, right: paddedRight };
 }
 
 function stageRect(stage: Element | null): Rect | null {
@@ -186,7 +197,6 @@ function stageRect(stage: Element | null): Rect | null {
 
 function openingCursor(document: EditorDocument): number {
   const first = snapshot(document).elements[0];
-  if (!first || first.from !== 0) return 0;
   return first.type === "parenthetical" ? Math.min(first.from + 1, first.to) : first.from;
 }
 
@@ -223,17 +233,20 @@ const normalizeInput = EditorState.transactionFilter.of((transaction) => {
 function snapSelection(transaction: Transaction): Transaction {
   const selection = transaction.newSelection.main;
   if (selection.empty) return transaction;
+  const revision = revisionOf(transaction.startState);
   const document = snapshot(
     { text: transaction.newDoc.toString(), lineTypes: lineTypesOf(transaction.startState) },
-    revisionOf(transaction.startState) + Number(transaction.docChanged),
+    revision,
   );
   const span = elementSelection(document, selection.anchor, selection.head);
   if (!span) return transaction;
+  const refilter = false;
+  const scrollIntoView = true;
   return transaction.startState.update({
     changes: transaction.changes,
     selection: span,
-    filter: false,
-    scrollIntoView: true,
+    filter: refilter,
+    scrollIntoView,
   });
 }
 
@@ -257,14 +270,20 @@ function singleChange(transaction: Transaction): { from: number; to: number; ins
   return count === 1 ? found : null;
 }
 
-function editTransaction(transaction: Transaction, next: Edit, typing = false) {
-  const cursor = Math.max(0, Math.min(next.cursor, next.document.text.length));
+function editTransaction(transaction: Transaction, next: Edit, typing?: boolean) {
+  const unmarked = false;
+  const markTyping = typing === undefined ? unmarked : typing;
+  const origin = 0;
+  const cursor = Math.max(origin, Math.min(next.cursor, next.document.text.length));
+  const scrollIntoView = true;
+  const eventName = markTyping ? "input.type" : "structure.skip";
+  const replaceFrom = 0;
   return {
-    changes: { from: 0, to: transaction.startState.doc.length, insert: next.document.text },
+    changes: { from: replaceFrom, to: transaction.startState.doc.length, insert: next.document.text },
     selection: { anchor: cursor },
     effects: replaceLineTypes.of(next.document.lineTypes),
-    annotations: Transaction.userEvent.of(typing ? "input.type" : "structure.skip"),
-    scrollIntoView: true,
+    annotations: Transaction.userEvent.of(eventName),
+    scrollIntoView,
   };
 }
 
@@ -360,12 +379,16 @@ function apply(view: EditorView, next: Edit) {
   const cursor = Math.max(0, Math.min(next.cursor, next.document.text.length));
   if (sameDocument(current, next.document) && cursor === view.state.selection.main.head) return;
   const typesChanged = !sameLineTypes(current.lineTypes, next.document.lineTypes);
+  const sameText = current.text === next.document.text;
+  const insertFrom = 0;
+  const changes = sameText ? undefined : { from: insertFrom, to: current.text.length, insert: next.document.text };
+  const scrollIntoView = true;
   view.dispatch({
-    changes: current.text === next.document.text ? undefined : { from: 0, to: current.text.length, insert: next.document.text },
+    changes,
     selection: { anchor: cursor },
     effects: typesChanged ? replaceLineTypes.of(next.document.lineTypes) : undefined,
     annotations: Transaction.userEvent.of("structure.skip"),
-    scrollIntoView: true,
+    scrollIntoView,
   });
 }
 
@@ -375,12 +398,12 @@ function sameDocument(left: EditorDocument, right: EditorDocument): boolean {
 
 function offer(view: EditorView) {
   const found = completions(documentOf(view.state), view.state.selection.main.head);
-  if (found && found.options.length > 0) startCompletion(view);
+  const choices = found ? found.options.length : 0;
+  if (choices > 0) startCompletion(view);
 }
 
 function copyElements(event: ClipboardEvent, view: EditorView): boolean {
   if (!writeCopy(event, view)) return false;
-  event.preventDefault();
   return true;
 }
 
@@ -406,7 +429,6 @@ function storeElements(data: DataTransfer, document: DocumentSnapshot, from: num
 function pasteElements(event: ClipboardEvent, view: EditorView): boolean {
   const next = pastedEdit(event, view);
   if (!next) return false;
-  event.preventDefault();
   apply(view, next);
   return true;
 }

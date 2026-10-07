@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { elementsDocument, normalizeElements } from "../domain/document";
-import type { OpenedScript, ScriptRepository } from "../infrastructure/repository";
+import type { OpenedScript, ScriptRepository } from "./repository";
 import { ScriptSession } from "./session";
 
 class FakeRepository implements ScriptRepository {
@@ -201,9 +201,14 @@ describe("script session", () => {
     const repository = new FakeRepository();
     const session = new ScriptSession(repository, 60_000);
     await session.start();
+    expect(session.state.revision).toBe(0);
+    expect(session.state.savedRevision).toBe(0);
     session.setHeader("title", "One");
     expect(session.state.revision).toBe(0);
     expect(session.needsSave()).toBe(false);
+    session.setHeader("title", "Two");
+    expect(session.state.revision).toBe(1);
+    expect(session.state.savedRevision).toBe(0);
   });
 
   it("ignores edits while the chosen script is being committed", async () => {
@@ -222,6 +227,9 @@ describe("script session", () => {
     expect(await session.chooseScript()).toBe(true);
     expect(session.state.script?.title).toBe("Two");
     expect(session.needsSave()).toBe(false);
+    session.setHeader("title", "Later");
+    expect(session.state.script?.title).toBe("Later");
+    expect(session.state.revision).toBe(1);
   });
 
   it("refuses to export when no script is open", async () => {
@@ -283,6 +291,38 @@ describe("script session", () => {
     expect(session.state.status).toBe("ready");
     expect(session.state.script?.title).toBe("Fresh");
     expect(session.state.error).toBeNull();
+  });
+
+  it("starts at revision zero and counts a document edit as unsaved", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    expect(session.state.revision).toBe(0);
+    expect(session.state.savedRevision).toBe(0);
+    expect(session.needsSave()).toBe(false);
+    await session.start();
+    session.setDocument(elementsDocument(normalizeElements([{ type: "action", text: "Hi" }])));
+    expect(session.state.revision).toBe(1);
+    expect(session.needsSave()).toBe(true);
+    expect(repository.saved).toHaveLength(0);
+  });
+
+  it("cancels the earlier autosave when another edit arrives", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 30);
+    await session.start();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      session.setHeader("title", "First");
+      await vi.advanceTimersByTimeAsync(10);
+      session.setHeader("title", "Second");
+      await vi.advanceTimersByTimeAsync(25);
+      expect(repository.saved).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(repository.saved).toHaveLength(1);
+      expect(JSON.parse(repository.saved[0]).title).toBe("Second");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("saves on the autosave delay", async () => {

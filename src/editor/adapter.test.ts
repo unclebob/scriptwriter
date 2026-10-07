@@ -9,6 +9,7 @@ import { elementsDocument, normalizeElements, type DocumentSnapshot } from "../d
 import { derivationCount, resetDerivedCache } from "../projections/derived";
 import {
   completionBounds,
+  completionTooltipSpace,
   createEditor,
   elementLabel,
   findInScript,
@@ -304,6 +305,7 @@ describe("CodeMirror typed adapter", () => {
     );
     source.view.dispatch({ selection: { anchor: 0, head: source.view.state.doc.length } });
     const copied = dispatchClipboard(source, "copy", {});
+    expect(copied.defaultPrevented).toBe(true);
     const mime = "application/x-scriptwriter-elements+json";
     const encoded = copied.clipboardData?.getData(mime) ?? "";
     expect(JSON.parse(encoded)).toEqual([
@@ -349,6 +351,7 @@ describe("CodeMirror typed adapter", () => {
       "[]",
       JSON.stringify([{ type: "nope", text: "Hi" }]),
       JSON.stringify([{ type: "action", text: "a\nb" }]),
+      JSON.stringify([{ type: "action", text: ["Hi"] }]),
     ];
     for (const encoded of rejected) {
       dispatchClipboard(editor, "paste", { [mime]: encoded, "text/plain": "" });
@@ -369,6 +372,7 @@ describe("CodeMirror typed adapter", () => {
     );
     editor.setElements(normalizeElements([{ type: "character", text: "ANN" }]));
     expect(editor.getDocument().elements[0]).toMatchObject({ type: "character", text: "ANN" });
+    expect(editor.view.state.facet(EditorView.editable)).toBe(true);
     editor.setEditable(false);
     expect(editor.view.state.facet(EditorView.editable)).toBe(false);
     editor.setEditable(true);
@@ -398,11 +402,14 @@ describe("CodeMirror typed adapter", () => {
 
     editor.setElements(normalizeElements([{ type: "action", text: "Wait." }]));
     editor.goto(editor.getDocument().elements[0].to);
-    pressKey(editor, "Tab");
+    const tab = pressKey(editor, "Tab");
+    expect(tab.defaultPrevented).toBe(true);
     expect(editor.getDocument().elements[0]).toMatchObject({ type: "character", text: "WAIT." });
-    pressKey(editor, "Tab", { shiftKey: true });
+    const shift = pressKey(editor, "Tab", { shiftKey: true });
+    expect(shift.defaultPrevented).toBe(true);
     expect(editor.getDocument().elements[0]).toMatchObject({ type: "action", text: "WAIT." });
-    pressKey(editor, "1", modifier());
+    const numbered = pressKey(editor, "1", modifier());
+    expect(numbered.defaultPrevented).toBe(true);
     expect(editor.getDocument().elements[0]).toMatchObject({ type: "scene", text: "WAIT." });
     parent.remove();
     editor.view.destroy();
@@ -424,7 +431,8 @@ describe("CodeMirror typed adapter", () => {
     typeText(editor, cue.from, "b");
     await vi.waitFor(() => expect(completionStatus(editor.view.state)).toBe("active"));
     await new Promise((resolve) => setTimeout(resolve, 80));
-    pressKey(editor, "Tab");
+    const tab = pressKey(editor, "Tab");
+    expect(tab.defaultPrevented).toBe(true);
     expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
       { type: "character", text: "BOB" },
       { type: "dialogue", text: "Hi." },
@@ -549,6 +557,7 @@ describe("CodeMirror typed adapter", () => {
       { type: "action", text: "Stay." },
       { type: "action", text: "Next." },
     ]);
+    expect(scrollTarget(editor)).toBeTruthy();
 
     editor.setElements(normalizeElements([
       { type: "scene", text: "ROOM" },
@@ -561,6 +570,7 @@ describe("CodeMirror typed adapter", () => {
     expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
       { type: "scene", text: "" },
     ]);
+    expect(editor.view.state.selection.main.head).toBe(0);
     editor.view.destroy();
   });
 
@@ -579,6 +589,7 @@ describe("CodeMirror typed adapter", () => {
     const selection = editor.view.state.selection.main;
     expect(selection.anchor).toBe(0);
     expect(selection.head).toBe(dialogue.to);
+    expect(scrollTarget(editor)).toBeTruthy();
     editor.view.destroy();
   });
 
@@ -680,7 +691,290 @@ describe("CodeMirror typed adapter", () => {
     expect(widgets).toBeGreaterThan(0);
     editor.view.destroy();
   });
+
+  it("scrolls a clipped caret into view", () => {
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(100);
+    expect(editor.view.state.selection.main.head).toBe(editor.view.state.doc.length);
+    expect(scrollTarget(editor)).toBeTruthy();
+    editor.goto(-3);
+    expect(editor.view.state.selection.main.head).toBe(0);
+    editor.view.destroy();
+  });
+
+  it("tells the cursor hook about selection and skipped edits", () => {
+    const cursors: number[] = [];
+    const changes: string[] = [];
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      {
+        onChange: (value) => changes.push(value.text),
+        onCursor: (_document, cursor) => cursors.push(cursor),
+      },
+    );
+    const before = cursors.length;
+    editor.view.dispatch({ selection: { anchor: 2 } });
+    expect(cursors).toEqual([...cursors.slice(0, before), 2]);
+    expect(changes).toEqual([]);
+
+    editor.view.dispatch({
+      changes: { from: 0, insert: "X" },
+      selection: null as never,
+      userEvent: "structure.skip",
+    });
+    expect(editor.getDocument().text).toBe("XWait.");
+    expect(cursors.at(-1)).toBe(editor.view.state.selection.main.head);
+    expect(cursors.length).toBe(before + 2);
+    expect(changes).toEqual(["XWait."]);
+    editor.view.destroy();
+  });
+
+  it("moves into the following dialogue without rewriting it", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "character", text: "ANN" },
+        { type: "dialogue", text: "Hi." },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const dialogue = editor.getDocument().elements[1];
+    editor.view.dispatch({ selection: { anchor: editor.getDocument().elements[0].to } });
+    const enter = pressKey(editor, "Enter");
+    expect(enter.defaultPrevented).toBe(true);
+    expect(editor.getDocument().text).toBe("ANN\nHi.");
+    expect(editor.view.state.selection.main.head).toBe(dialogue.to);
+    expect(scrollTarget(editor)).toBeTruthy();
+    parent.remove();
+    editor.view.destroy();
+  });
+
+  it("drops one trailing space when Return splits an action", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Hello  " }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(5);
+    pressKey(editor, "Enter");
+    expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "action", text: "Hello" },
+      { type: "action", text: " " },
+    ]);
+    parent.remove();
+    editor.view.destroy();
+  });
+
+  it("does not open another line after accepting a cue that already has dialogue", async () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "character", text: "BOB" },
+        { type: "character", text: "B" },
+        { type: "dialogue", text: " " },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(editor.getDocument().elements[1].to);
+    startCompletion(editor.view);
+    await vi.waitFor(() => expect(completionStatus(editor.view.state)).toBe("active"));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    pressEnter(editor);
+    expect(editor.getDocument().text).toBe("BOB\n\nBOB\n ");
+    expect(editor.getDocument().elements.map(({ type }) => type)).toEqual(["character", "character", "dialogue"]);
+    parent.remove();
+    editor.view.destroy();
+  });
+
+  it("moves the completion highlight before accepting it", async () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "character", text: "ALICE" },
+        { type: "dialogue", text: "Hi." },
+        { type: "character", text: "ANN" },
+        { type: "dialogue", text: "Yo." },
+        { type: "character", text: "A" },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(editor.getDocument().elements[4].to);
+    startCompletion(editor.view);
+    await vi.waitFor(() => expect(currentCompletions(editor.view.state).length).toBeGreaterThan(1));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const labels = currentCompletions(editor.view.state).map((option) => option.label);
+    const down = pressKey(editor, "ArrowDown");
+    expect(down.defaultPrevented).toBe(true);
+    pressEnter(editor);
+    expect(editor.getDocument().elements[4].text).toBe(labels[1]);
+    parent.remove();
+    editor.view.destroy();
+  });
+
+  it("offers the only matching name", async () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "character", text: "BOB" },
+        { type: "dialogue", text: "Hi." },
+        { type: "action", text: "B" },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(editor.getDocument().elements[2].to);
+    useElement(editor, "character");
+    expect(editor.getDocument().elements[2]).toMatchObject({ type: "character", text: "B" });
+    await vi.waitFor(() => expect(currentCompletions(editor.view.state).map((option) => option.label)).toEqual(["BOB"]));
+    editor.setElements(normalizeElements([{ type: "action", text: "Wait." }]));
+    editor.goto(editor.getDocument().elements[0].to);
+    useElement(editor, "action");
+    expect(completionStatus(editor.view.state)).toBeNull();
+    parent.remove();
+    editor.view.destroy();
+  });
+
+  it("does not start a completion when the line has no choices", () => {
+    const cursors: number[] = [];
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: (_document, cursor) => cursors.push(cursor) },
+    );
+    editor.view.dispatch({ selection: { anchor: editor.view.state.doc.length } });
+    const before = cursors.length;
+    useElement(editor, "action");
+    expect(editor.getDocument().elements[0]).toMatchObject({ type: "action", text: "Wait." });
+    expect(completionStatus(editor.view.state)).toBeNull();
+    expect(cursors.length).toBe(before);
+    editor.view.destroy();
+  });
+
+  it("pads the completion menu inside the stage", () => {
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    stage.getBoundingClientRect = () => ({
+      x: 10, y: 20, width: 300, height: 400, top: 20, left: 10, bottom: 420, right: 310, toJSON() { return {}; },
+    });
+    document.body.append(stage);
+    const editor = createEditor(
+      stage,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const root = document.documentElement;
+    expect(completionTooltipSpace(editor.view)).toEqual({
+      top: 24,
+      left: 14,
+      bottom: Math.min(root.clientHeight, 420) - 4,
+      right: Math.min(root.clientWidth, 310) - 4,
+    });
+    stage.remove();
+    const loose = createEditor(
+      document.createElement("div"),
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    expect(completionTooltipSpace(loose.view)).toEqual({
+      top: 4,
+      left: 4,
+      bottom: root.clientHeight - 4,
+      right: root.clientWidth - 4,
+    });
+    editor.view.destroy();
+    loose.view.destroy();
+  });
+
+  it("pastes structured elements instead of the plain text", () => {
+    const parent = document.createElement("div");
+    const editor = createEditor(parent, [], { onChange: () => undefined, onCursor: () => undefined });
+    const mime = "application/x-scriptwriter-elements+json";
+    const pasted = dispatchClipboard(editor, "paste", {
+      [mime]: JSON.stringify([
+        { type: "character", text: "ANN", blanksBefore: 0 },
+        { type: "dialogue", text: "Hi.", blanksBefore: 0 },
+        { type: "action", text: "Go.", blanksBefore: 1 },
+      ]),
+      "text/plain": "ANN\nHi.\n\nGo.",
+    });
+    expect(pasted.defaultPrevented).toBe(true);
+    expect(editor.getDocument().text).toBe("ANN\nHi.\n\nGo.");
+    expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "character", text: "ANN" },
+      { type: "dialogue", text: "Hi." },
+      { type: "action", text: "Go." },
+    ]);
+    editor.goto(editor.view.state.doc.length);
+    dispatchClipboard(editor, "paste", { "text/plain": "!" });
+    expect(editor.getDocument().text).toBe("ANN\nHi.\n\nGo.!");
+    editor.view.destroy();
+  });
+
+  it("keeps a typed character when the following line is undone", () => {
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const end = editor.view.state.doc.length;
+    typeText(editor, end, "!");
+    expect(editor.getDocument().text).toBe("Wait.!");
+    editor.view.dispatch({
+      changes: { from: editor.view.state.doc.length, insert: "\nNext" },
+      annotations: Transaction.userEvent.of("input"),
+    });
+    expect(editor.getDocument().elements.map((element) => element.text)).toEqual(["Wait.!", "Next"]);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.getDocument().text).toBe("Wait.!");
+    editor.view.destroy();
+  });
+
+  it("leaves the earlier scene intact when a later selection is deleted", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "scene", text: "ROOM" },
+        { type: "action", text: "Wait." },
+        { type: "action", text: "Stay." },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const wait = editor.getDocument().elements[1];
+    const stay = editor.getDocument().elements[2];
+    editor.view.dispatch({ selection: { anchor: wait.from, head: stay.to } });
+    const removed = pressKey(editor, "Backspace");
+    expect(removed.defaultPrevented).toBe(true);
+    expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "scene", text: "ROOM" },
+    ]);
+    parent.remove();
+    editor.view.destroy();
+  });
 });
+
+function scrollTarget(editor: ScriptEditor): unknown {
+  return (editor.view as unknown as { viewState: { scrollTarget: unknown } }).viewState.scrollTarget;
+}
 
 function typeText(editor: ScriptEditor, at: number, text: string) {
   editor.view.dispatch({
@@ -717,6 +1011,7 @@ function pressEnter(editor: ScriptEditor) {
 function pressKey(editor: ScriptEditor, key: string, extras: KeyboardEventInit = {}) {
   const event = new KeyboardEvent("keydown", { ...extras, key, bubbles: true, cancelable: true });
   editor.view.contentDOM.dispatchEvent(event);
+  return event;
 }
 
 function modifier(): KeyboardEventInit {
