@@ -121,6 +121,8 @@ function stateFor(document: EditorDocument, host: globalThis.Document): EditorSt
       EditorView.domEventHandlers({ copy: copyElements, paste: pasteElements }),
       autocompletion({ override: [completeSource], activateOnTyping, defaultKeymap: completionKeys }),
       tooltips({ parent: tooltipParent, tooltipSpace: completionTooltipSpace }),
+      EditorView.cursorScrollMargin.of({ x: 5, y: 16 }),
+      EditorView.scrollHandler.of(keepCursorOnScreen),
       scriptTheme,
       scriptDecorations,
       normalizeInput,
@@ -145,7 +147,8 @@ function stateFor(document: EditorDocument, host: globalThis.Document): EditorSt
 const scriptTheme = EditorView.theme({
   "&": { height: "auto", background: "transparent" },
   ".cm-scroller": {
-    overflow: "visible",
+    overflowX: "visible",
+    overflowY: "visible",
     height: "auto",
     fontFamily: '"Courier New", Courier, monospace',
     fontSize: "12pt",
@@ -193,6 +196,141 @@ function stageRect(stage: Element | null): Rect | null {
   if (!stage) return null;
   const box = stage.getBoundingClientRect();
   return { top: box.top, left: box.left, bottom: box.bottom, right: box.right };
+}
+
+function keepCursorOnScreen(
+  view: EditorView,
+  range: { head: number; anchor: number },
+  options: { xMargin: number; yMargin: number },
+): boolean {
+  const box = caretBox(view, range.head);
+  if (!box) return false;
+  return keepCaretInView(view.scrollDOM, box, options.xMargin, options.yMargin, caretSide(range.head, range.anchor));
+}
+
+function caretSide(head: number, anchor: number): number {
+  return head < anchor ? -1 : 1;
+}
+
+function caretBox(view: EditorView, pos: number): Rect | null {
+  const found = view.domAtPos(pos);
+  const atCaret = visibleBox(boxAt(found.node, found.offset));
+  if (atCaret) return atCaret;
+  return lineRect(found.node);
+}
+
+function boxAt(node: Node, offset: number): Rect {
+  const doc = node.ownerDocument;
+  if (!doc) return { top: 0, left: 0, bottom: 0, right: 0 };
+  const range = doc.createRange();
+  range.setStart(node, Math.min(offset, nodeEnd(node)));
+  range.collapse(true);
+  return range.getBoundingClientRect();
+}
+
+function nodeEnd(node: Node): number {
+  return node instanceof Text ? node.length : node.childNodes.length;
+}
+
+function visibleBox(rect: Rect): Rect | null {
+  if (rect.bottom > rect.top) return rect;
+  return null;
+}
+
+function lineRect(node: Node): Rect | null {
+  const line = closestLine(elementOf(node));
+  if (!line) return null;
+  return visibleBox(line.getBoundingClientRect());
+}
+
+function elementOf(node: Node): Element | null {
+  return node instanceof Element ? node : node.parentElement;
+}
+
+function closestLine(element: Element | null): Element | null {
+  if (!element) return null;
+  return element.closest(".cm-line");
+}
+
+/** Scroll each ancestor that actually scrolls so the caret stays inside it. */
+export function keepCaretInView(start: Element, caret: Rect, xMargin: number, yMargin: number, side: number): boolean {
+  let box = caret;
+  let owned = false;
+  for (let node = start.parentElement; node; node = node.parentElement) {
+    if (!scrollable(node)) continue;
+    owned = true;
+    box = scrollNode(node, box, xMargin, yMargin, side);
+  }
+  return owned;
+}
+
+function scrollable(node: Element): boolean {
+  const style = computedStyle(node);
+  return overflowScrolls(style.overflowY) || overflowScrolls(style.overflowX);
+}
+
+function computedStyle(node: Element): CSSStyleDeclaration {
+  const view = node.ownerDocument.defaultView;
+  if (view) return view.getComputedStyle(node);
+  return window.getComputedStyle(node);
+}
+
+function overflowScrolls(value: string): boolean {
+  return value === "auto" || value === "scroll";
+}
+
+function scrollNode(node: Element, caret: Rect, xMargin: number, yMargin: number, side: number): Rect {
+  const delta = cursorScroll(caret, portOf(node), xMargin, yMargin, side);
+  const movedY = addScroll(node, "scrollTop", delta.y);
+  const movedX = addScroll(node, "scrollLeft", delta.x);
+  return shiftRect(caret, movedX, movedY);
+}
+
+function portOf(node: Element): Rect {
+  const bounds = node.getBoundingClientRect();
+  const top = bounds.top + node.clientTop;
+  const left = bounds.left + node.clientLeft;
+  return { top, left, bottom: top + node.clientHeight, right: left + node.clientWidth };
+}
+
+function addScroll(node: Element, key: "scrollTop" | "scrollLeft", delta: number): number {
+  if (!delta) return 0;
+  const before = node[key];
+  node[key] = before + delta;
+  return node[key] - before;
+}
+
+function shiftRect(caret: Rect, x: number, y: number): Rect {
+  return { top: caret.top - y, bottom: caret.bottom - y, left: caret.left - x, right: caret.right - x };
+}
+
+function cursorScroll(caret: Rect, port: Rect, xMargin: number, yMargin: number, side: number): { x: number; y: number } {
+  return {
+    x: axisScroll(caret.left, caret.right, port.left, port.right, fitMargin(xMargin, port.right - port.left), side),
+    y: axisScroll(caret.top, caret.bottom, port.top, port.bottom, fitMargin(yMargin, port.bottom - port.top), side),
+  };
+}
+
+function fitMargin(margin: number, size: number): number {
+  return Math.min(Math.max(margin, 0), Math.max(size, 0));
+}
+
+function axisScroll(start: number, end: number, portStart: number, portEnd: number, margin: number, side: number): number {
+  if (start < portStart + margin) return scrollBefore(start, end, portStart, portEnd, margin, side);
+  if (end > portEnd - margin) return scrollAfter(start, end, portStart, portEnd, margin, side);
+  return 0;
+}
+
+function scrollBefore(start: number, end: number, portStart: number, portEnd: number, margin: number, side: number): number {
+  const move = start - (portStart + margin);
+  if (side > 0 && end > portEnd + move) return end - portEnd + margin;
+  return move;
+}
+
+function scrollAfter(start: number, end: number, portStart: number, portEnd: number, margin: number, side: number): number {
+  const move = end - portEnd + margin;
+  if (side < 0 && start - move < portStart) return start - (portStart + margin);
+  return move;
 }
 
 function openingCursor(document: EditorDocument): number {

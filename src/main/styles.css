@@ -109,6 +109,7 @@ button, input, textarea {
 
 aside {
   width: 16rem;
+  min-height: 0;
   overflow: auto;
   padding: 0.75rem;
   border-right: 1px solid #ccc;
@@ -185,6 +186,8 @@ aside h2 {
 
 .stage {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: 1.5rem 1rem 2rem;
   background: #d9d9d9;

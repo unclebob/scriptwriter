@@ -11,6 +11,7 @@ import {
   completionBounds,
   completionTooltipSpace,
   createEditor,
+  keepCaretInView,
   elementLabel,
   findInScript,
   marginText,
@@ -707,6 +708,94 @@ describe("CodeMirror typed adapter", () => {
     editor.view.destroy();
   });
 
+  it("does not scroll when the caret has no place on screen", () => {
+    const parent = document.createElement("div");
+    const editor = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Wait." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    expect(editor.view.state.facet(EditorView.cursorScrollMargin)).toEqual({ x: 5, y: 16 });
+    const handler = editor.view.state.facet(EditorView.scrollHandler)[0];
+    expect(
+      handler(editor.view, editor.view.state.selection.main, { x: "nearest", y: "nearest", xMargin: 5, yMargin: 16 }),
+    ).toBe(false);
+    editor.view.destroy();
+  });
+
+  it("scrolls the page to keep the caret on screen", () => {
+    const stage = fakePort("auto", "auto", { top: 0, left: 0, bottom: 100, right: 200 });
+    const page = fakePort("visible", "visible", { top: 0, left: 0, bottom: 400, right: 200 });
+    const start = mountPorts([stage, page]);
+    const below = { top: 114, left: 10, bottom: 130, right: 18 };
+    expect(keepCaretInView(start, below, 0, 0, 1)).toBe(true);
+    expect(stage.scrollTop).toBe(30);
+    expect(stage.scrollLeft).toBe(0);
+    expect(page.scrollTop).toBe(0);
+
+    stage.scrollTop = 0;
+    const above = { top: -20, left: 10, bottom: -4, right: 18 };
+    keepCaretInView(start, above, 4, 8, 1);
+    expect(stage.scrollTop).toBe(-28);
+
+    stage.scrollTop = 0;
+    const inside = { top: 40, left: 10, bottom: 56, right: 18 };
+    keepCaretInView(start, inside, 8, 8, 1);
+    expect(stage.scrollTop).toBe(0);
+
+    stage.scrollTop = 0;
+    const nearTop = { top: 2, left: 10, bottom: 18, right: 18 };
+    keepCaretInView(start, nearTop, 0, 8, 1);
+    expect(stage.scrollTop).toBe(-6);
+    start.parentElement?.parentElement?.remove();
+  });
+
+  it("scrolls sideways and through a chain of scrollports", () => {
+    const stage = fakePort("hidden", "auto", { top: 0, left: 0, bottom: 80, right: 200 });
+    const wide = fakePort("auto", "hidden", { top: 0, left: 0, bottom: 100, right: 200 });
+    const start = mountPorts([stage, wide]);
+    const corner = { top: 114, left: 220, bottom: 130, right: 240 };
+    keepCaretInView(start, corner, 4, 0, 1);
+    expect(wide.scrollLeft).toBe(44);
+    expect(wide.scrollTop).toBe(30);
+    expect(stage.scrollTop).toBe(20);
+    expect(stage.scrollLeft).toBe(0);
+
+    wide.scrollLeft = 40;
+    const offLeft = { top: 20, left: -30, bottom: 36, right: -10 };
+    keepCaretInView(start, offLeft, 4, 0, -1);
+    expect(wide.scrollLeft).toBe(6);
+    start.parentElement?.parentElement?.remove();
+  });
+
+  it("keeps the near edge of a caret taller than the page", () => {
+    const stage = fakePort("scroll", "scroll", { top: 10, left: 0, bottom: 110, right: 200 });
+    const start = mountPorts([stage]);
+    keepCaretInView(start, { top: 0, left: 0, bottom: 250, right: 10 }, 0, 0, 1);
+    expect(stage.scrollTop).toBe(140);
+
+    stage.scrollTop = 0;
+    keepCaretInView(start, { top: -20, left: 0, bottom: -4, right: 10 }, 0, 0, -1);
+    expect(stage.scrollTop).toBe(-30);
+
+    stage.scrollTop = 0;
+    keepCaretInView(start, { top: 20, left: 0, bottom: 190, right: 10 }, 0, 0, -1);
+    expect(stage.scrollTop).toBe(10);
+
+    stage.scrollTop = 0;
+    keepCaretInView(start, { top: 60, left: 0, bottom: 130, right: 10 }, 0, 0, -1);
+    expect(stage.scrollTop).toBe(20);
+
+    stage.scrollTop = 0;
+    keepCaretInView(start, { top: 10, left: 0, bottom: 26, right: 10 }, 1000, 1000, 1);
+    expect(stage.scrollTop).toBe(16);
+
+    stage.scrollTop = 0;
+    keepCaretInView(start, { top: 0, left: 0, bottom: 16, right: 10 }, -20, -20, 1);
+    expect(stage.scrollTop).toBe(-10);
+    stage.remove();
+  });
+
   it("tells the cursor hook about selection and skipped edits", () => {
     const cursors: number[] = [];
     const changes: string[] = [];
@@ -974,6 +1063,65 @@ describe("CodeMirror typed adapter", () => {
 
 function scrollTarget(editor: ScriptEditor): unknown {
   return (editor.view as unknown as { viewState: { scrollTarget: unknown } }).viewState.scrollTarget;
+}
+
+function mountPorts(ports: HTMLElement[]): HTMLElement {
+  const start = document.createElement("div");
+  let parent = ports[0];
+  document.body.append(parent);
+  for (const next of ports.slice(1)) {
+    parent.append(next);
+    parent = next;
+  }
+  parent.append(start);
+  return start;
+}
+
+function fakePort(
+  overflowX: string,
+  overflowY: string,
+  box: { top: number; left: number; bottom: number; right: number },
+): HTMLElement {
+  const node = document.createElement("div");
+  node.style.overflowX = overflowX;
+  node.style.overflowY = overflowY;
+  const height = box.bottom - box.top;
+  const width = box.right - box.left;
+  Object.defineProperty(node, "clientHeight", { configurable: true, get: () => height });
+  Object.defineProperty(node, "clientWidth", { configurable: true, get: () => width });
+  Object.defineProperty(node, "clientTop", { configurable: true, get: () => 0 });
+  Object.defineProperty(node, "clientLeft", { configurable: true, get: () => 0 });
+  node.getBoundingClientRect = () =>
+    ({
+      top: box.top,
+      left: box.left,
+      bottom: box.bottom,
+      right: box.right,
+      width,
+      height,
+      x: box.left,
+      y: box.top,
+      toJSON() {
+        return {};
+      },
+    }) as DOMRect;
+  let top = 0;
+  let left = 0;
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => top,
+    set: (value: number) => {
+      top = value;
+    },
+  });
+  Object.defineProperty(node, "scrollLeft", {
+    configurable: true,
+    get: () => left,
+    set: (value: number) => {
+      left = value;
+    },
+  });
+  return node;
 }
 
 function typeText(editor: ScriptEditor, at: number, text: string) {
