@@ -231,7 +231,6 @@ aside h2 {
 
 .page-rule {
   position: relative;
-  top: -0.7em;
   height: 0;
   margin: 0;
   border-top: 1px solid #b5b5b5;
@@ -243,6 +242,11 @@ aside h2 {
   overflow: visible;
   pointer-events: none;
   user-select: none;
+}
+
+/* A blank line is the gap above a new element. A break inside a paragraph has none. */
+.cm-line:has(> br:only-child) + .page-rule {
+  top: -0.7em;
 }
 
 .status {

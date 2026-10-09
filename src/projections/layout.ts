@@ -148,7 +148,7 @@ function nextSlice(
   first: boolean,
 ): Remainder {
   if (sheet.used === LINES_PER_PAGE) newPage(sheet);
-  if (first) placeBlanks(sheet, blanks);
+  if (first && sheet.used > 0) placeBlanks(sheet, blanks);
   return takeLines(sheet, block, lines, chars, continuation);
 }
 

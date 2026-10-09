@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { EditorSelection, EditorState } from "@codemirror/state";
-import { WidgetType } from "@codemirror/view";
+import { EditorView, WidgetType } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { elementsDocument, normalizeElements, type ScriptElement } from "../domain/document";
 import { PageRule, SceneNumber, scriptDecorations } from "./decorations";
@@ -57,6 +57,30 @@ describe("screenplay decorations", () => {
     expect((page?.spec.widget as PageRule).toDOM().textContent).toBe("2");
     const actionOnly = stateFor([{ type: "action", text: "Hello" }]);
     expect(specs(actionOnly).some((range) => range.spec.widget instanceof SceneNumber)).toBe(false);
+  });
+
+  it("keeps the element class on the text after a page rule", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const documentSnapshot = elementsDocument(normalizeElements([
+      { type: "dialogue", text: "word ".repeat(400).trim() },
+    ]));
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: documentSnapshot.text,
+        extensions: [metadataExtensions(documentSnapshot), scriptDecorations],
+      }),
+    });
+    const rules = [...view.contentDOM.querySelectorAll(".page-rule")];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      const next = rule.nextElementSibling;
+      expect(next?.classList.contains("cm-line")).toBe(true);
+      expect(next?.querySelector(".el-dialogue")).toBeTruthy();
+    }
+    view.destroy();
+    parent.remove();
   });
 
   it("rebuilds after a line-type change and keeps decorations for a selection change", () => {

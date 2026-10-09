@@ -266,6 +266,15 @@ describe("pagination", () => {
     expect(pages[1][0].role).toBe("parenthetical");
   });
 
+  it("drops a blank that would otherwise open the next page", () => {
+    const pages = paginate(document([
+      { type: "action", text: "a".repeat(60 * 54) },
+      { type: "action", text: "Next." },
+    ]));
+    expect(pages[0]).toHaveLength(54);
+    expect(pages[1].map((line) => line.text)).toEqual(["Next."]);
+  });
+
   it("carries an action that starts on a full page onto the next page", () => {
     const pages = paginate(document([
       { type: "action", text: "a".repeat(60 * 53) },

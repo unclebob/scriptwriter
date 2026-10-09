@@ -69,6 +69,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   for (const element of screenplay.elements) {
     const line = state.doc.lineAt(Math.min(element.from, state.doc.length));
     ranges.push(Decoration.line({ class: `el-${element.type}` }).range(line.from));
+    markText(ranges, element.type, element.from, element.to);
     const number = element.type === "scene" ? numbers.get(element.from) : undefined;
     if (number !== undefined) {
       const sceneSide = -1;
@@ -91,6 +92,11 @@ function buildDecorations(state: EditorState): DecorationSet {
   }
   const sort = true;
   return Decoration.set(ranges, sort);
+}
+
+function markText(ranges: Range<Decoration>[], type: string, from: number, to: number) {
+  if (from >= to) return;
+  ranges.push(Decoration.mark({ class: `el-${type}` }).range(from, to));
 }
 
 export const scriptDecorations = StateField.define<DecorationSet>({
