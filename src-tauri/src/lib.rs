@@ -17,6 +17,8 @@ struct ScriptRoots {
     pending: Option<PathBuf>,
     seen: Option<String>,
     saw_file: bool,
+    refresh_seen: Option<String>,
+    refresh_armed: Option<String>,
     companion: Option<CompanionProc>,
 }
 
@@ -201,8 +203,21 @@ fn activate(state: &State<'_, ActiveScript>, root: PathBuf) -> Result<OpenedScri
 
 fn open_remembered(slot: &ActiveScript, root: PathBuf) -> Result<OpenedScript, String> {
     let opened = open_script(root)?;
+    remember_opened(slot, opened)
+}
+
+fn remember_opened(slot: &ActiveScript, opened: OpenedScript) -> Result<OpenedScript, String> {
     remember_active(slot, &opened)?;
+    mark_opened(slot, opened)
+}
+
+fn mark_opened(slot: &ActiveScript, opened: OpenedScript) -> Result<OpenedScript, String> {
     note_seen(slot, opened.text.clone())?;
+    seen_refresh(slot, opened)
+}
+
+fn seen_refresh(slot: &ActiveScript, opened: OpenedScript) -> Result<OpenedScript, String> {
+    catch_up_refresh(slot, &PathBuf::from(&opened.root))?;
     Ok(opened)
 }
 
@@ -469,17 +484,129 @@ fn read_external_script(state: State<'_, ActiveScript>) -> Result<ExternalScript
 }
 
 fn external_script(slot: &ActiveScript) -> Result<ExternalScript, String> {
-    let text = read_script(&active_root_of(slot)?)?;
+    let root = active_root_of(slot)?;
+    let text = read_script(&root)?;
     if seen_match(slot, &text)? {
-        return Ok(ExternalScript {
-            changed: false,
-            text: None,
-        });
+        return asked_refresh(slot, &root, text);
     }
+    changed_script(slot, &root, text)
+}
+
+fn asked_refresh(
+    slot: &ActiveScript,
+    root: &Path,
+    text: Option<String>,
+) -> Result<ExternalScript, String> {
+    refresh_or_quiet(pending_refresh(slot, root)?, slot, root, text)
+}
+
+fn refresh_or_quiet(
+    pending: bool,
+    slot: &ActiveScript,
+    root: &Path,
+    text: Option<String>,
+) -> Result<ExternalScript, String> {
+    if !pending {
+        return Ok(unchanged_script());
+    }
+    changed_script(slot, root, text)
+}
+
+fn unchanged_script() -> ExternalScript {
+    ExternalScript {
+        changed: false,
+        text: None,
+    }
+}
+
+fn pending_refresh(slot: &ActiveScript, root: &Path) -> Result<bool, String> {
+    new_refresh(slot, read_refresh(root)?)
+}
+
+fn new_refresh(slot: &ActiveScript, token: Option<String>) -> Result<bool, String> {
+    let roots = slot
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.".to_string())?;
+    Ok(token_is_new(&roots, token.as_deref()))
+}
+
+fn token_is_new(roots: &ScriptRoots, token: Option<&str>) -> bool {
+    fresh_token(token).is_some_and(|value| roots.refresh_seen.as_deref() != Some(value))
+}
+
+fn fresh_token(token: Option<&str>) -> Option<&str> {
+    token.filter(|text| !text.is_empty())
+}
+
+fn changed_script(
+    slot: &ActiveScript,
+    root: &Path,
+    text: Option<String>,
+) -> Result<ExternalScript, String> {
+    arm_refresh(slot, root)?;
     Ok(ExternalScript {
         changed: true,
         text,
     })
+}
+
+fn arm_refresh(slot: &ActiveScript, root: &Path) -> Result<(), String> {
+    let token = read_refresh(root)?;
+    store_armed(slot, token)
+}
+
+fn store_armed(slot: &ActiveScript, token: Option<String>) -> Result<(), String> {
+    let mut roots = slot
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.".to_string())?;
+    roots.refresh_armed = token;
+    Ok(())
+}
+
+fn read_refresh(root: &Path) -> Result<Option<String>, String> {
+    refresh_text(fs::read_to_string(refresh_path(root)))
+}
+
+fn refresh_path(root: &Path) -> PathBuf {
+    root.join(".scriptwriter").join("refresh")
+}
+
+fn refresh_text(read: io::Result<String>) -> Result<Option<String>, String> {
+    read.map(first_token).or_else(absent_refresh)
+}
+
+fn first_token(text: String) -> Option<String> {
+    filled_owned(text.lines().next().unwrap_or("").trim())
+}
+
+fn filled_owned(line: &str) -> Option<String> {
+    if line.is_empty() {
+        return None;
+    }
+    Some(line.to_string())
+}
+
+fn absent_refresh(error: io::Error) -> Result<Option<String>, String> {
+    if error.kind() == io::ErrorKind::NotFound {
+        return Ok(None);
+    }
+    Err(error.to_string())
+}
+
+fn catch_up_refresh(slot: &ActiveScript, root: &Path) -> Result<(), String> {
+    let token = read_refresh(root)?;
+    store_seen_refresh(slot, token)
+}
+
+fn store_seen_refresh(slot: &ActiveScript, token: Option<String>) -> Result<(), String> {
+    let mut roots = slot
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.".to_string())?;
+    roots.refresh_seen = token;
+    Ok(())
 }
 
 fn seen_match(slot: &ActiveScript, text: &Option<String>) -> Result<bool, String> {
@@ -505,7 +632,14 @@ fn note_seen(slot: &ActiveScript, text: Option<String>) -> Result<(), String> {
         .map_err(|_| "Script state is unavailable.".to_string())?;
     roots.saw_file = true;
     roots.seen = text;
+    take_armed(&mut roots);
     Ok(())
+}
+
+fn take_armed(roots: &mut ScriptRoots) {
+    if let Some(token) = roots.refresh_armed.take() {
+        roots.refresh_seen = Some(token);
+    }
 }
 
 const STANDING_RULES: &str = "\
@@ -520,14 +654,17 @@ Element types are scene, action, character, parenthetical, dialogue,\n\
 transition, shot, and act. Text never chooses a type. A scene heading is one\n\
 opaque line. Do not split it into a prefix, a location, and a time of day.\n\
 Write character, scene, shot, act, and transition text in the case the writer\n\
-sees. Edit script.json to change the script. Scriptwriter reloads that file\n\
-when the writer has nothing unsaved, and shows the change on screen.\n\
+sees. Edit script.json to change the script. To put that file on screen, write\n\
+a new one-line token to .scriptwriter/refresh. Use a different token each time.\n\
+Scriptwriter reads script.json and refreshes the display when the writer has\n\
+nothing unsaved.\n\
 Do not start Scriptwriter. Closing its window stops only this companion.\n\
 Do not commit or push unless asked.\n";
 
 const LAUNCH_PROMPT: &str = "\
 The screenplay in this directory is open in Scriptwriter. When asked, edit \
-script.json. The window reloads the file and shows the change. Wait for directives.";
+script.json, then write a new one-line token to .scriptwriter/refresh so the \
+window reads that file and refreshes the display. Wait for directives.";
 
 fn standing_rules() -> &'static str {
     STANDING_RULES
@@ -1238,6 +1375,37 @@ mod tests {
     }
 
     #[test]
+    fn refreshes_the_display_when_the_companion_asks() {
+        let dir = temp_dir().canonicalize().unwrap();
+        let slot = ActiveScript::default();
+        fs::create_dir_all(dir.join(".scriptwriter")).unwrap();
+        fs::write(dir.join(SCRIPT_FILE), "on disk").unwrap();
+        fs::write(dir.join(".scriptwriter").join("refresh"), "old\n").unwrap();
+        open_remembered(&slot, dir.clone()).unwrap();
+        assert!(!external_script(&slot).unwrap().changed);
+        fs::write(dir.join(".scriptwriter").join("refresh"), " \n").unwrap();
+        assert!(!external_script(&slot).unwrap().changed);
+        fs::write(dir.join(".scriptwriter").join("refresh"), "1\n").unwrap();
+        let asked = external_script(&slot).unwrap();
+        assert!(asked.changed);
+        assert_eq!(asked.text.as_deref(), Some("on disk"));
+        note_seen(&slot, asked.text).unwrap();
+        assert!(!external_script(&slot).unwrap().changed);
+        fs::write(dir.join(".scriptwriter").join("refresh"), "1\n").unwrap();
+        assert!(!external_script(&slot).unwrap().changed);
+        fs::write(dir.join(SCRIPT_FILE), "rewritten").unwrap();
+        let rewritten = external_script(&slot).unwrap();
+        assert!(rewritten.changed);
+        assert_eq!(rewritten.text.as_deref(), Some("rewritten"));
+        assert_eq!(first_token("  2 \nnext".into()).as_deref(), Some("2"));
+        assert!(first_token("\n".into()).is_none());
+        assert!(absent_refresh(io::Error::new(io::ErrorKind::NotFound, "x"))
+            .unwrap()
+            .is_none());
+        assert!(absent_refresh(io::Error::other("nope")).is_err());
+    }
+
+    #[test]
     fn names_a_companion_for_the_screenplay_folder() {
         let dir = temp_dir();
         let nested = dir.join("My Script");
@@ -1252,7 +1420,8 @@ mod tests {
         assert_eq!(session_char('.'), '-');
         assert!(standing_rules().contains("script.json"));
         assert!(standing_rules().contains("opaque line"));
-        assert!(launch_prompt().contains("script.json"));
+        assert!(standing_rules().contains(".scriptwriter/refresh"));
+        assert!(launch_prompt().contains(".scriptwriter/refresh"));
         let args = new_session_args(&nested, &id);
         assert!(args.iter().any(|arg| arg == "--yolo"));
         assert!(args.iter().any(|arg| arg == "--trust"));
