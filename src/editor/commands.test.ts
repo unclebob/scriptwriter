@@ -188,8 +188,12 @@ describe("typed editing", () => {
       { type: "dialogue", text: "Hello." },
     ]);
     const stayed = enter(original, original.elements[0].to);
-    expect(stayed.document.text).toBe(original.text);
-    expect(stayed.cursor).toBe(original.elements[1].to);
+    expect(next(stayed).elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "character", text: "BOB" },
+      { type: "parenthetical", text: "()" },
+      { type: "dialogue", text: "Hello." },
+    ]);
+    expect(stayed.cursor).toBe(next(stayed).elements[1].from + 1);
 
     const aside = doc([
       { type: "character", text: "BOB" },
@@ -587,7 +591,17 @@ describe("typed editing", () => {
     expect(backspace(written, written.elements[0].from + 2)).toBeNull();
   });
 
-  it("opens a dialogue line instead of staying on a following action", () => {
+  it("opens a parenthetical after a character, and tab turns it into dialogue", () => {
+    const original = doc([{ type: "character", text: "BOB" }]);
+    const opened = enter(original, original.elements[0].to);
+    const parenthetical = next(opened).elements[1];
+    expect(parenthetical).toMatchObject({ type: "parenthetical", text: "()" });
+    expect(opened.cursor).toBe(parenthetical.from + 1);
+    const spoken = tab(next(opened), opened.cursor);
+    expect(next(spoken).elements[1]).toMatchObject({ type: "dialogue", text: "" });
+  });
+
+  it("opens a parenthetical between a character and the following action", () => {
     const original = elementsDocument(
       normalizeElements([
         { type: "character", text: "BOB", blanksBefore: 0 },
@@ -597,7 +611,7 @@ describe("typed editing", () => {
     const edit = enter(original, original.elements[0].to);
     expect(next(edit).elements.map(({ type, text }) => ({ type, text }))).toEqual([
       { type: "character", text: "BOB" },
-      { type: "dialogue", text: "" },
+      { type: "parenthetical", text: "()" },
       { type: "action", text: "Moves." },
     ]);
   });

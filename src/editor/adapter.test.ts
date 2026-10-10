@@ -136,7 +136,7 @@ describe("CodeMirror typed adapter", () => {
     editor.view.destroy();
   });
 
-  it("opens dialogue after Return accepts a character completion", async () => {
+  it("opens a parenthetical after Return accepts a character completion", async () => {
     const parent = document.createElement("div");
     document.body.append(parent);
     const editor = createEditor(
@@ -160,7 +160,7 @@ describe("CodeMirror typed adapter", () => {
       { type: "character", text: "BOB" },
       { type: "dialogue", text: "Hi." },
       { type: "character", text: "BOB" },
-      { type: "dialogue", text: "" },
+      { type: "parenthetical", text: "()" },
     ]);
     parent.remove();
     editor.view.destroy();
@@ -228,7 +228,7 @@ describe("CodeMirror typed adapter", () => {
       { type: "character", text: "BOB" },
       { type: "dialogue", text: "Hi." },
       { type: "character", text: "BOB" },
-      { type: "dialogue", text: "" },
+      { type: "parenthetical", text: "()" },
     ]);
     parent.remove();
     editor.view.destroy();
@@ -822,9 +822,18 @@ describe("CodeMirror typed adapter", () => {
     editor.view.destroy();
   });
 
-  it("moves into the following dialogue without rewriting it", () => {
+  it("opens a parenthetical after a character and keeps that scene in view", () => {
     const parent = document.createElement("div");
+    parent.style.overflowY = "auto";
+    parent.style.height = "200px";
     document.body.append(parent);
+    const scroll = trackScroll(parent);
+    scroll.top = 400;
+    const frames: FrameRequestCallback[] = [];
+    const animation = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     const editor = createEditor(
       parent,
       normalizeElements([
@@ -833,13 +842,24 @@ describe("CodeMirror typed adapter", () => {
       ]),
       { onChange: () => undefined, onCursor: () => undefined },
     );
-    const dialogue = editor.getDocument().elements[1];
+    editor.view.scrollDOM.style.overflowY = "visible";
     editor.view.dispatch({ selection: { anchor: editor.getDocument().elements[0].to } });
     const enter = pressKey(editor, "Enter");
     expect(enter.defaultPrevented).toBe(true);
-    expect(editor.getDocument().text).toBe("ANN\nHi.");
-    expect(editor.view.state.selection.main.head).toBe(dialogue.to);
-    expect(scrollTarget(editor)).toBeTruthy();
+    expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "character", text: "ANN" },
+      { type: "parenthetical", text: "()" },
+      { type: "dialogue", text: "Hi." },
+    ]);
+    const parenthetical = editor.getDocument().elements[1];
+    expect(editor.view.state.selection.main.head).toBe(parenthetical.from + 1);
+    scroll.top = 9000;
+    frames[frames.length - 1]?.(0);
+    expect(scroll.top).toBe(400);
+    pressKey(editor, "Tab");
+    expect(editor.getDocument().elements[1]).toMatchObject({ type: "dialogue", text: "" });
+    animation.mockRestore();
+    scroll.release();
     parent.remove();
     editor.view.destroy();
   });
@@ -879,8 +899,13 @@ describe("CodeMirror typed adapter", () => {
     await vi.waitFor(() => expect(completionStatus(editor.view.state)).toBe("active"));
     await new Promise((resolve) => setTimeout(resolve, 80));
     pressEnter(editor);
-    expect(editor.getDocument().text).toBe("BOB\n\nBOB\n ");
-    expect(editor.getDocument().elements.map(({ type }) => type)).toEqual(["character", "character", "dialogue"]);
+    expect(editor.getDocument().text).toBe("BOB\n\nBOB\n()\n ");
+    expect(editor.getDocument().elements.map(({ type }) => type)).toEqual([
+      "character",
+      "character",
+      "parenthetical",
+      "dialogue",
+    ]);
     parent.remove();
     editor.view.destroy();
   });
@@ -1151,6 +1176,32 @@ function dispatchClipboard(
 
 function pressEnter(editor: ScriptEditor) {
   pressKey(editor, "Enter");
+}
+
+function trackScroll(node: HTMLElement): { top: number; left: number; release(): void } {
+  const box = {
+    top: 0,
+    left: 0,
+    release() {
+      Reflect.deleteProperty(node, "scrollTop");
+      Reflect.deleteProperty(node, "scrollLeft");
+    },
+  };
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => box.top,
+    set: (value: number) => {
+      box.top = value;
+    },
+  });
+  Object.defineProperty(node, "scrollLeft", {
+    configurable: true,
+    get: () => box.left,
+    set: (value: number) => {
+      box.left = value;
+    },
+  });
+  return box;
 }
 
 function pressKey(editor: ScriptEditor, key: string, extras: KeyboardEventInit = {}) {

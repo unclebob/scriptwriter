@@ -27,7 +27,7 @@ export const ELEMENT_KEY: ElementType[] = [...ELEMENTS];
 const RETURN_NEXT: Record<ElementType, ElementType> = {
   scene: "action",
   action: "action",
-  character: "dialogue",
+  character: "parenthetical",
   parenthetical: "dialogue",
   dialogue: "action",
   transition: "scene",

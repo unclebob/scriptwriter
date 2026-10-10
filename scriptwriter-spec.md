@@ -78,7 +78,7 @@ Return adds the next element and moves the cursor there. Text after the cursor m
 |---|---|
 | Scene Heading | Action |
 | Action | Action |
-| Character | Dialogue |
+| Character | Parenthetical |
 | Parenthetical | Dialogue |
 | Dialogue | Action |
 | Transition | Scene Heading |
@@ -124,13 +124,13 @@ The lists come from the script. They are not stored.
 - After `(` in a cue, the extensions are `(V.O.)`, `(O.S.)`, `(O.C.)`, `(CONT'D)`, `(PRE-LAP)`, and `(FILTER)`.
 - A transition offers `CUT TO:`, `DISSOLVE TO:`, `SMASH CUT TO:`, `MATCH CUT TO:`, `FADE IN:`, `FADE OUT.`, `FADE TO BLACK.`, and `BACK TO:`.
 
-The list opens as the name or heading is typed. It stays inside the window, and opens above the cursor when there is more room above than below. Tab and Return accept a highlighted entry. In a character cue, Return then opens dialogue.
+The list opens as the name or heading is typed. It stays inside the window, and opens above the cursor when there is more room above than below. Tab and Return accept a highlighted entry. In a character cue, Return then opens a parenthetical. Tab turns that parenthetical into dialogue.
 
 ## The window
 
 The title in the header is the title page title. The fields under it are the credit, the author, the draft, and the contact. The list under the fields is the acts and the scene headings, in script order. A scene shows its number. Choosing one scrolls to it. The row the cursor is in is marked.
 
-The script is monospaced, 12 point, on US Letter. The sheet grows with the script, and the window scrolls to keep the cursor on the screen. The editor wraps to the element widths. A rule marks where each new page starts, at the start of the line that crosses onto that page. The rule lies on the sheet. The line keeps wrapping through it, and a selection or an edit crosses that point the same way it crosses any other point in the text. The status bar shows the element and the page, as `Page 2 of 40`. The status bar and the PDF share one cached page projection for the document revision.
+The script is monospaced, 12 point, on US Letter. The sheet grows with the script, and the window scrolls to keep the cursor on the screen. An edit keeps the scene you are writing on the screen. The editor wraps to the element widths. A rule marks where each new page starts, at the start of the line that crosses onto that page. The rule lies on the sheet. The line keeps wrapping through it, and a selection or an edit crosses that point the same way it crosses any other point in the text. The status bar shows the element and the page, as `Page 2 of 40`. The status bar and the PDF share one cached page projection for the document revision.
 
 The element the cursor is in is also named in the left margin, on that line, in grey italics. A blank line has no margin name.
 

@@ -93,13 +93,72 @@ export function createEditor(
 }
 
 function dispatchTo(view: EditorView, hooks: EditorHooks, transaction: Transaction) {
+  const place = stagePlace(view, transaction);
   view.update([transaction]);
+  publishDispatch(view, hooks, transaction);
+  holdStage(view, place);
+}
+
+function publishDispatch(view: EditorView, hooks: EditorHooks, transaction: Transaction) {
   const document = documentOf(view.state);
   const typesChanged = metadataChanged(transaction);
   if (transaction.docChanged || typesChanged) hooks.onChange(document);
+  noteCursor(view, hooks, transaction, typesChanged);
+}
+
+function noteCursor(view: EditorView, hooks: EditorHooks, transaction: Transaction, typesChanged: boolean) {
   if (transaction.docChanged || typesChanged || transaction.selection !== null) {
-    hooks.onCursor(document, view.state.selection.main.head);
+    hooks.onCursor(documentOf(view.state), view.state.selection.main.head);
   }
+}
+
+type StagePlace = { node: HTMLElement; top: number; left: number };
+
+function stagePlace(view: EditorView, transaction: Transaction): StagePlace | null {
+  if (!transaction.docChanged) return null;
+  return captureStage(view);
+}
+
+function captureStage(view: EditorView): StagePlace | null {
+  const node = scrollStage(view);
+  if (!node) return null;
+  return { node, top: node.scrollTop, left: node.scrollLeft };
+}
+
+function scrollStage(view: EditorView): HTMLElement | null {
+  return scrollableAncestor(view.scrollDOM);
+}
+
+function scrollableAncestor(node: Element | null): HTMLElement | null {
+  if (!node) return null;
+  return ancestorOrNext(node);
+}
+
+function ancestorOrNext(node: Element): HTMLElement | null {
+  if (overflowScrolls(computedStyle(node).overflowY)) return node as HTMLElement;
+  return scrollableAncestor(node.parentElement);
+}
+
+function holdStage(view: EditorView, place: StagePlace | null) {
+  if (!place) return;
+  window.requestAnimationFrame(() => settleStage(view, place));
+}
+
+function settleStage(view: EditorView, place: StagePlace) {
+  if (!view.dom.isConnected) return;
+  restoreStage(place);
+  revealCaret(view);
+}
+
+function restoreStage(place: StagePlace) {
+  place.node.scrollTop = place.top;
+  place.node.scrollLeft = place.left;
+}
+
+function revealCaret(view: EditorView) {
+  const box = caretBox(view, view.state.selection.main.head);
+  if (!box) return;
+  keepCaretInView(view.scrollDOM, box, 5, 16, 1);
 }
 
 function stateFor(document: EditorDocument, host: globalThis.Document): EditorState {
