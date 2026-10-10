@@ -55,7 +55,7 @@ my-script/
   script.json
 ```
 
-`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. `contact` may be several lines. The other title fields are one line. An element has either no blank line before it or one. An empty folder becomes an empty script. The credit on a new script is `Written by`. A new script opens on an empty scene heading, and that empty heading is not written until the script has text. The rules are in `scriptwriter-spec.md`.
+`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. `contact` may be several lines. The other title fields are one line. An element has either no blank line before it or one. An empty folder becomes an empty script. The credit on a new script is `Written by`. A new script opens on an empty scene heading, and that empty heading is not written until the script has text. Opening a script starts an associated Grok agent for that folder. The agent edits `script.json`, and the window shows the change when nothing is unsaved. Closing the window stops that agent. The rules are in `scriptwriter-spec.md`.
 
 ## Source
 

@@ -36,6 +36,27 @@ class FakeRepository implements ScriptRepository {
     this.exported.push({ name, extension, bytes });
     return true;
   }
+
+  external: { changed: boolean; text: string | null } = { changed: false, text: null };
+  acknowledged: (string | null)[] = [];
+  companions = 0;
+
+  async readExternal(): Promise<{ changed: boolean; text: string | null }> {
+    return this.external;
+  }
+
+  async acknowledgeExternal(text: string | null): Promise<void> {
+    this.acknowledged.push(text);
+    this.external = { changed: false, text };
+  }
+
+  async ensureCompanion(): Promise<void> {
+    this.companions += 1;
+  }
+
+  async stopCompanion(): Promise<void> {
+    this.companions = 0;
+  }
 }
 
 describe("script session", () => {
@@ -295,6 +316,47 @@ describe("script session", () => {
     expect(session.state.status).toBe("ready");
     expect(session.state.script?.title).toBe("Fresh");
     expect(session.state.error).toBeNull();
+  });
+
+  it("shows a script the companion wrote when nothing is unsaved", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    repository.external = {
+      changed: true,
+      text: JSON.stringify({ title: "Remote", elements: [{ type: "dialogue", text: "Hello." }] }),
+    };
+    expect(await session.pullExternal()).toBe(true);
+    expect(session.state.script?.title).toBe("Remote");
+    expect(session.state.document?.text).toContain("Hello.");
+    expect(session.needsSave()).toBe(false);
+    expect(repository.acknowledged).toEqual([repository.external.text]);
+    expect(await session.pullExternal()).toBe(false);
+  });
+
+  it("leaves a dirty script in place when the companion writes", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    session.setHeader("title", "Mine");
+    repository.external = {
+      changed: true,
+      text: JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "No." }] }),
+    };
+    expect(await session.pullExternal()).toBe(false);
+    expect(session.state.script?.title).toBe("Mine");
+    expect(repository.acknowledged).toEqual([]);
+  });
+
+  it("keeps the open script when the companion writes invalid JSON", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    repository.external = { changed: true, text: "{" };
+    expect(await session.pullExternal()).toBe(false);
+    expect(session.state.script?.title).toBe("One");
+    expect(session.state.error).toContain("not JSON");
+    expect(repository.acknowledged).toEqual(["{"]);
   });
 
   it("starts at revision zero and counts a document edit as unsaved", async () => {

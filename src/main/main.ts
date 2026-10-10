@@ -34,6 +34,7 @@ const stage = document.querySelector<HTMLElement>("#stage")!;
 const session = new ScriptSession(new TauriScriptRepository());
 let sceneKey = "";
 let closing = false;
+let companionWarning = "";
 
 const fields = [titleInput, creditInput, authorInput, draftInput, contactInput];
 
@@ -175,7 +176,7 @@ void getCurrentWindow().onCloseRequested(async (event) => {
 });
 
 paint(editor.getDocument(), editor.view.state.selection.main.head);
-void session.start().then(showLoaded).catch((error: unknown) => showWarning(message(error)));
+void session.start().then(showLoaded).then(watchCompanion).catch((error: unknown) => showWarning(message(error)));
 
 function menuItem(label: string, keys: string, run: () => void): HTMLButtonElement {
   const button = document.createElement("button");
@@ -381,6 +382,42 @@ function showLoaded() {
   const loaded = loadedScript();
   if (!loaded) return;
   applyLoaded(loaded);
+  void openCompanion();
+}
+
+function openCompanion(): Promise<void> {
+  return session.ensureCompanion().catch((error: unknown) => showWarning(message(error)));
+}
+
+function watchCompanion() {
+  window.setInterval(() => {
+    void pullCompanionEdit();
+  }, 400);
+}
+
+function pullCompanionEdit(): Promise<void> {
+  return session.pullExternal().then(showIfExternal).catch((error: unknown) => warnCompanion(error));
+}
+
+function warnCompanion(error: unknown) {
+  const text = message(error);
+  if (text === companionWarning) return;
+  companionWarning = text;
+  showWarning(text);
+}
+
+function showIfExternal(changed: boolean) {
+  companionWarning = "";
+  if (!changed) return;
+  showExternal();
+}
+
+function showExternal() {
+  const head = editor.view.state.selection.main.head;
+  const loaded = loadedScript();
+  if (!loaded) return;
+  applyLoaded(loaded);
+  editor.goto(head);
 }
 
 function loadedScript() {

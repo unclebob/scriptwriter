@@ -158,6 +158,7 @@ let coords: { top: number; left: number; right: number; bottom: number } | null 
 let nextChoose: ChooseResult | Promise<ChooseResult> = null;
 let saveError: Error | null = null;
 let exportError: Error | null = null;
+let externalText: string | null = null;
 const saves: string[] = [];
 const exportsSeen: { suggestedName: string; extension: string }[] = [];
 
@@ -175,6 +176,12 @@ bridge.invoke.mockImplementation(async (command: string, args?: { text?: string;
     exportsSeen.push({ suggestedName: args?.suggestedName ?? "", extension: args?.extension ?? "" });
     return true;
   }
+  if (command === "read_external_script") return { changed: externalText !== null, text: externalText };
+  if (command === "acknowledge_script") {
+    externalText = null;
+    return undefined;
+  }
+  if (command === "ensure_companion" || command === "stop_companion") return undefined;
   throw new Error(`unexpected command ${command}`);
 });
 
@@ -430,6 +437,15 @@ describe("screen shell", () => {
     view.contentDOM.prepend(svg);
     expect(clickMargin(100, 120)).toBe(roadPos);
     svg.remove();
+  });
+
+  it("renders a script the companion wrote", async () => {
+    externalText = JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "From the agent." }] });
+    await vi.waitFor(() => expect(elementName()).toBe("Action"));
+    expect(titleInput.value).toBe("Remote");
+    expect(view.state.doc.toString()).toContain("From the agent.");
+    expect(externalText).toBeNull();
+    await openKettle();
   });
 
   it("opens the format menu from a left click on the element name", () => {

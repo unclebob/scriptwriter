@@ -15,7 +15,7 @@ my-script/
 
 The folder is the only stored form. There is no database and no separate project file.
 
-`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. The application owns the file and rewrites it.
+`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. The application rewrites the file as you edit. An associated agent for that folder may write it too. When the file changes and the screen has no unsaved edit, Scriptwriter loads it and shows the change.
 
 ```json
 {
@@ -38,6 +38,8 @@ Each element is one object. `text` is one line, the text the writer sees. A pare
 A new script opens on an empty scene heading. That empty heading is not written. `elements` stays empty until the script has text.
 
 The file is UTF-8 with LF line endings.
+
+Opening a script starts the associated agent for that folder, in its own terminal. The agent is Grok. It edits `script.json`. Closing the window stops that agent and no other.
 
 ## Elements
 

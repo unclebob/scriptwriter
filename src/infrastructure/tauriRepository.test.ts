@@ -30,6 +30,19 @@ describe("native repository adapter", () => {
     expect(invoke).toHaveBeenCalledWith("choose_script");
   });
 
+  it("asks the native shell to watch the companion's script", async () => {
+    vi.mocked(invoke).mockResolvedValue({ changed: true, text: "{\"title\":\"Remote\"}" });
+    const repository = new TauriScriptRepository();
+    await expect(repository.readExternal()).resolves.toEqual({ changed: true, text: "{\"title\":\"Remote\"}" });
+    await repository.acknowledgeExternal("{\"title\":\"Remote\"}");
+    await repository.ensureCompanion();
+    await repository.stopCompanion();
+    expect(invoke).toHaveBeenNthCalledWith(1, "read_external_script");
+    expect(invoke).toHaveBeenNthCalledWith(2, "acknowledge_script", { text: "{\"title\":\"Remote\"}" });
+    expect(invoke).toHaveBeenNthCalledWith(3, "ensure_companion");
+    expect(invoke).toHaveBeenNthCalledWith(4, "stop_companion");
+  });
+
   it("passes export bytes to the native save-dialog operation", async () => {
     vi.mocked(invoke).mockResolvedValue(true);
     const repository = new TauriScriptRepository();

@@ -21,4 +21,20 @@ export class TauriScriptRepository implements ScriptRepository {
   exportFile(suggestedName: string, extension: "pdf" | "csv", bytes: Uint8Array): Promise<boolean> {
     return invoke("export_file", { suggestedName, extension, bytes: Array.from(bytes) });
   }
+
+  readExternal(): Promise<{ changed: boolean; text: string | null }> {
+    return invoke("read_external_script");
+  }
+
+  acknowledgeExternal(text: string | null): Promise<void> {
+    return invoke("acknowledge_script", { text });
+  }
+
+  ensureCompanion(): Promise<void> {
+    return invoke("ensure_companion");
+  }
+
+  stopCompanion(): Promise<void> {
+    return invoke("stop_companion");
+  }
 }

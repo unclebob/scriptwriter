@@ -1,6 +1,6 @@
 import { elementsDocument, storableElements, type DocumentSnapshot } from "../domain/document";
 import { serializeScript, storedScript, type Script } from "../domain/script";
-import type { ScriptRepository } from "./repository";
+import type { ExternalScript, ScriptRepository } from "./repository";
 import { derive } from "../projections/derived";
 import { scenesCsv } from "../projections/scenes";
 
@@ -144,6 +144,16 @@ export class ScriptSession {
     );
   }
 
+  async pullExternal(): Promise<boolean> {
+    const incoming = await this.incomingExternal();
+    if (!incoming) return false;
+    return this.takeExternal(incoming.text);
+  }
+
+  ensureCompanion(): Promise<void> {
+    return this.repository.ensureCompanion();
+  }
+
   async exportSchedule(): Promise<void> {
     await this.flush();
     const current = this.current();
@@ -151,6 +161,44 @@ export class ScriptSession {
     const derived = derive(current.document);
     const bytes = await renderSchedule(current.script.title, derived.scenes, current.document.elements);
     await this.repository.exportFile(`${fileStem(current.script.title)}-shooting-schedule.pdf`, "pdf", bytes);
+  }
+
+  private skipExternal(): boolean {
+    if (this.needsSave()) return true;
+    return this.holdInput;
+  }
+
+  private async incomingExternal(): Promise<ExternalScript | null> {
+    if (this.skipExternal()) return null;
+    return this.changedExternal();
+  }
+
+  private async changedExternal(): Promise<ExternalScript | null> {
+    const incoming = await this.repository.readExternal();
+    if (!incoming.changed) return null;
+    return incoming;
+  }
+
+  private async takeExternal(text: string | null): Promise<boolean> {
+    const root = this.openRoot();
+    if (!root) return false;
+    const applied = this.loadText(root, text);
+    await this.repository.acknowledgeExternal(text);
+    return applied;
+  }
+
+  private openRoot(): string | null {
+    return this.stateValue.script?.root ?? null;
+  }
+
+  private loadText(root: string, text: string | null): boolean {
+    try {
+      this.load({ root, text });
+      return true;
+    } catch (error) {
+      this.fail(error);
+      return false;
+    }
   }
 
   private load(opened: { root: string; text: string | null }) {
