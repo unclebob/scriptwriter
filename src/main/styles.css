@@ -215,7 +215,7 @@ aside h2 {
   font-style: italic;
   line-height: 12pt;
   white-space: nowrap;
-  cursor: context-menu;
+  cursor: pointer;
   user-select: none;
 }
 

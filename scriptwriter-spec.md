@@ -132,7 +132,7 @@ The script is monospaced, 12 point, on US Letter. The sheet grows with the scrip
 
 The element the cursor is in is also named in the left margin, on that line, in grey italics. A blank line has no margin name.
 
-A right-click on that name opens the Format menu at the pointer. The current element is marked in the menu.
+A click or a right-click on that name opens the Format menu at the pointer. The current element is marked in the menu.
 
 An up arrow sits to the left of the scene number. Clicking it inserts an empty scene heading before that scene and puts the cursor in it.
 

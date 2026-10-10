@@ -432,6 +432,15 @@ describe("screen shell", () => {
     svg.remove();
   });
 
+  it("opens the format menu from a left click on the element name", () => {
+    moveCursor(roadPos);
+    marginLabel.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 105 }));
+    expect(cursor()).toBe(roadPos);
+    marginLabel.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 105 }));
+    expect(formatMenu.hidden).toBe(false);
+    expect(formatItem("scene").classList.contains("is-current")).toBe(true);
+  });
+
   it("opens the format menu on the act, clamped inside the window", () => {
     moveCursor(actPos);
     setWindow(200, 180);

@@ -72,10 +72,9 @@ for (const [index, type] of ELEMENTS.entries()) {
   formatMenu.append(item);
 }
 
-marginLabel.addEventListener("contextmenu", (event) => {
-  event.preventDefault();
-  openFormatMenu(event.clientX, event.clientY);
-});
+marginLabel.addEventListener("contextmenu", showFormatMenu);
+marginLabel.addEventListener("click", showFormatMenu);
+marginLabel.addEventListener("mousedown", holdFormatClick);
 
 pageEl.addEventListener("mousedown", (event) => {
   const arrow = event.target instanceof Element ? event.target.closest<HTMLElement>(".insert-above") : null;
@@ -238,6 +237,18 @@ function clearMargin(): boolean {
   marginLabel.hidden = true;
   marginLabel.textContent = "";
   return true;
+}
+
+function showFormatMenu(event: MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  openFormatMenu(event.clientX, event.clientY);
+}
+
+function holdFormatClick(event: MouseEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function openFormatMenu(x: number, y: number) {
