@@ -19,7 +19,7 @@ import {
   useElement,
   type ScriptEditor,
 } from "./adapter";
-import { scriptDecorations } from "./decorations";
+import { pageBreakOffsets, scriptDecorations } from "./decorations";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
@@ -276,21 +276,18 @@ describe("CodeMirror typed adapter", () => {
       { onChange: () => undefined, onCursor: () => undefined },
     );
     const dialogue = editor.getDocument().elements[1];
-    const marks: number[] = [];
-    editor.view.state.field(scriptDecorations).between(0, editor.view.state.doc.length, (from, _to, value) => {
-      const widget = value.spec.widget as {
-        toDOM?: () => HTMLElement;
-        ignoreEvent?: () => boolean;
-        eq?: (other: object) => boolean;
-      } | undefined;
-      if (widget?.ignoreEvent && widget.eq) {
-        expect(widget.ignoreEvent()).toBe(true);
-        expect(widget.eq(widget)).toBe(true);
-      }
-      if (widget?.toDOM?.().className === "page-rule") marks.push(from);
-    });
+    const marks = pageBreakOffsets(editor.view.state);
     expect(marks.length).toBeGreaterThan(0);
     expect(marks.some((from) => from > dialogue.from && from < dialogue.to)).toBe(true);
+    expect(editor.view.contentDOM.querySelector(".page-rule")).toBeNull();
+    expect(editor.view.contentDOM.querySelectorAll(".cm-line").length).toBe(editor.view.state.doc.lines);
+    const at = marks[0];
+    editor.view.dispatch({ selection: { anchor: at - 4, head: at + 4 } });
+    expect(editor.view.state.selection.main.from).toBe(at - 4);
+    expect(editor.view.state.selection.main.to).toBe(at + 4);
+    editor.view.dispatch({ changes: { from: at - 3, to: at + 3, insert: "across" } });
+    expect(editor.view.state.doc.sliceString(at - 3, at + 3)).toBe("across");
+    expect(editor.view.contentDOM.querySelectorAll(".cm-line").length).toBe(editor.view.state.doc.lines);
     editor.view.destroy();
   });
 

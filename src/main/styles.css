@@ -229,8 +229,11 @@ aside h2 {
   overflow: visible;
 }
 
+.cm-layer.page-rules {
+  pointer-events: none;
+}
+
 .page-rule {
-  position: relative;
   height: 0;
   margin: 0;
   border-top: 1px solid #b5b5b5;
@@ -238,15 +241,21 @@ aside h2 {
   font-family: system-ui, sans-serif;
   font-size: 8pt;
   line-height: 1;
-  text-align: right;
   overflow: visible;
   pointer-events: none;
   user-select: none;
 }
 
+.page-number {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  line-height: 1;
+}
+
 /* A blank line is the gap above a new element. A break inside a paragraph has none. */
-.cm-line:has(> br:only-child) + .page-rule {
-  top: -0.7em;
+.page-rule-after-blank {
+  transform: translateY(-0.7em);
 }
 
 .status {

@@ -33,7 +33,7 @@ import {
 import { pageAt } from "../projections/layout";
 import { completions } from "../projections/completion";
 import { derive } from "../projections/derived";
-import { scriptDecorations } from "./decorations";
+import { pageRuleLayer, scriptDecorations } from "./decorations";
 import {
   documentOf,
   lineTypesOf,
@@ -125,6 +125,7 @@ function stateFor(document: EditorDocument, host: globalThis.Document): EditorSt
       EditorView.scrollHandler.of(keepCursorOnScreen),
       scriptTheme,
       scriptDecorations,
+      pageRuleLayer,
       normalizeInput,
       Prec.highest(
         keymap.of([
