@@ -1,5 +1,6 @@
 import type { DocumentSnapshot, PositionedElement } from "../domain/document";
 import { cueName } from "../domain/elements";
+import { wrapText } from "./layout";
 
 export type SceneRow = {
   number: number;
@@ -82,6 +83,101 @@ export function outline(document: DocumentSnapshot): OutlineRow[] {
     rows.push({ kind: "scene", text: element.text.trim() || "Scene", from: element.from, number });
   }
   return rows;
+}
+
+/** Mono characters that fit the 390-point shooting-schedule page. */
+const LINE_WIDTH = 49;
+const GUTTER = "      ";
+const CONTENT_WIDTH = LINE_WIDTH - GUTTER.length;
+
+/** Lines for a shooting schedule, sorted by location. Scene numbers stay the script's numbers. */
+export function scheduleLines(
+  title: string,
+  rows: readonly SceneRow[],
+  elements: readonly PositionedElement[],
+): string[] {
+  const body = [...rows].sort(byLocation).flatMap((row, index) => sceneBlock(row, index, elements));
+  return [...scheduleHeading(title), ...body];
+}
+
+function scheduleHeading(title: string): string[] {
+  const name = title.trim();
+  const shown = name === "" ? "Untitled" : name;
+  return [...wrapText(shown, LINE_WIDTH), "SHOOTING SCHEDULE", ""];
+}
+
+function sceneBlock(row: SceneRow, index: number, elements: readonly PositionedElement[]): string[] {
+  const lines = sceneBody(row, elements);
+  if (index === 0) return lines;
+  return ["", ...lines];
+}
+
+function sceneBody(row: SceneRow, elements: readonly PositionedElement[]): string[] {
+  const lines = [...locationLines(row), ...detailLines(row), ...actorLines(row.actors)];
+  const body = elementLines(sceneElements(elements, row.from));
+  if (body.length === 0) return lines;
+  return [...lines, "", ...body];
+}
+
+function sceneElements(elements: readonly PositionedElement[], from: number): readonly PositionedElement[] {
+  const start = elements.findIndex((element) => headingAt(element, from));
+  if (start < 0) return [];
+  return elements.slice(start + 1, nextBoundary(elements, start));
+}
+
+function headingAt(element: PositionedElement, from: number): boolean {
+  return element.type === "scene" && element.from === from;
+}
+
+function nextBoundary(elements: readonly PositionedElement[], start: number): number {
+  const next = elements.findIndex((element, index) => boundaryAfter(element, index, start));
+  if (next < 0) return elements.length;
+  return next;
+}
+
+function boundaryAfter(element: PositionedElement, index: number, start: number): boolean {
+  if (index <= start) return false;
+  return sceneOrAct(element.type);
+}
+
+function sceneOrAct(type: string): boolean {
+  return type === "scene" || type === "act";
+}
+
+function elementLines(elements: readonly PositionedElement[]): string[] {
+  return elements.flatMap(elementText);
+}
+
+function elementText(element: PositionedElement): string[] {
+  if (element.text.trim() === "") return [];
+  return wrapText(element.text, CONTENT_WIDTH).map(gutterLine);
+}
+
+function gutterLine(line: string): string {
+  return `${GUTTER}${line}`;
+}
+
+function locationLines(row: SceneRow): string[] {
+  return wrapText(row.location, CONTENT_WIDTH).map((line, index) => locationLine(row.number, line, index));
+}
+
+function locationLine(number: number, line: string, index: number): string {
+  if (index === 0) return `${String(number).padStart(4)}  ${line}`;
+  return gutterLine(line);
+}
+
+function detailLines(row: SceneRow): string[] {
+  return wrapText(pageAndAct(row), CONTENT_WIDTH).map(gutterLine);
+}
+
+function pageAndAct(row: SceneRow): string {
+  if (row.act === "") return `page ${row.page}`;
+  return `page ${row.page}  ${row.act}`;
+}
+
+function actorLines(actors: readonly string[]): string[] {
+  if (actors.length === 0) return [];
+  return wrapText(actors.join(", "), CONTENT_WIDTH).map(gutterLine);
 }
 
 /** CSV sorted by the complete, opaque scene heading, then by scene number. */

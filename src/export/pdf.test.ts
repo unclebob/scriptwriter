@@ -1,6 +1,8 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { describe, expect, it } from "vitest";
 import { elementsDocument, normalizeElements } from "../domain/document";
+import { pageStarts, paginate } from "../projections/layout";
+import { sceneRows } from "../projections/scenes";
 import { rgb } from "pdf-lib";
 import {
   centeredX,
@@ -14,6 +16,7 @@ import {
   nextCreditY,
   pageNumberPosition,
   renderPdf,
+  renderSchedule,
   sceneNumberPosition,
   scriptPageNumber,
   titleTop,
@@ -71,6 +74,49 @@ async function extracted(bytes: Uint8Array): Promise<{ pages: number; text: stri
 }
 
 describe("PDF export", () => {
+  it("prints a shooting schedule in location order with the script's scene numbers", async () => {
+    const document = elementsDocument(normalizeElements([
+      { type: "act", text: "ACT ONE" },
+      { type: "scene", text: "OFFICE" },
+      { type: "action", text: "Ann waits." },
+      { type: "character", text: "ANN" },
+      { type: "dialogue", text: "Coffee?" },
+      { type: "scene", text: "KITCHEN" },
+      { type: "action", text: "A".repeat(80) },
+      { type: "character", text: "BOB" },
+      { type: "parenthetical", text: "(quietly)" },
+      { type: "dialogue", text: "Tea?" },
+      { type: "shot", text: "CLOSE ON THE KETTLE" },
+      { type: "transition", text: "CUT TO:" },
+    ]));
+    const bytes = await renderSchedule("The Kettle", sceneRows(document, pageStarts(paginate(document))), document.elements);
+    const opened = await getDocument({ data: bytes.slice() }).promise;
+    const view = (await opened.getPage(1)).getViewport({ scale: 1 });
+    expect(view.width).toBe(390);
+    expect(view.height).toBe(792);
+    const pdf = await extracted(bytes.slice());
+    expect(pdf.pages).toBe(1);
+    expect(pdf.text).toContain("SHOOTING SCHEDULE");
+    expect(pdf.text).toContain("2 KITCHEN");
+    expect(pdf.text).toContain("1 OFFICE");
+    expect(pdf.text.indexOf("2 KITCHEN")).toBeLessThan(pdf.text.indexOf("1 OFFICE"));
+    expect(pdf.text).not.toContain("1 KITCHEN");
+    expect(pdf.text.indexOf("Tea?")).toBeLessThan(pdf.text.indexOf("Coffee?"));
+    expect(pdf.text).toContain("Ann waits.");
+    expect(pdf.text).toContain("(quietly)");
+    expect(pdf.text).toContain("CLOSE ON THE KETTLE");
+    expect(pdf.text).toContain("CUT TO:");
+    expect(pdf.text).toContain("page 1 ACT ONE");
+    const items = await placedText(bytes.slice());
+    for (const item of items) {
+      expect(item.x).toBeGreaterThanOrEqual(16 - 0.01);
+      expect(item.x + item.width).toBeLessThanOrEqual(390 - 16 + 0.01);
+    }
+    const blank = await extracted(await renderSchedule("  ", [], []));
+    expect(blank.pages).toBe(1);
+    expect(blank.text).toContain("Untitled");
+  });
+
   it("produces a parseable title page and screenplay page", async () => {
     const document = elementsDocument(
       normalizeElements([
@@ -145,6 +191,10 @@ describe("PDF export", () => {
     const bytes = await renderPdf(header, document);
     expect(bytes.length).toBeLessThan(200_000);
     expect(Buffer.from(bytes).includes(Buffer.from("ObjStm"))).toBe(false);
+    const screenplay = await getDocument({ data: bytes.slice() }).promise;
+    const screenplayView = (await screenplay.getPage(1)).getViewport({ scale: 1 });
+    expect(screenplayView.width).toBe(612);
+    expect(screenplayView.height).toBe(792);
     const items = await placedText(bytes.slice());
     const title = items.find((item) => item.str.includes("KETTLE"));
     if (!title) throw new Error(items.map((item) => item.str).join("|"));

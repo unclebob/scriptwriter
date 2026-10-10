@@ -236,6 +236,7 @@ describe("script session", () => {
     const session = new ScriptSession(new FakeRepository(), 60_000);
     await expect(session.exportPdf()).rejects.toThrow("No script is open.");
     await expect(session.exportScenes()).rejects.toThrow("No script is open.");
+    await expect(session.exportSchedule()).rejects.toThrow("No script is open.");
   });
 
   it("exports a pdf and a scene list under a safe file name", async () => {
@@ -249,16 +250,19 @@ describe("script session", () => {
     session.setHeader("title", "A/B: \"C");
     await session.exportPdf();
     await session.exportScenes();
+    await session.exportSchedule();
     expect(repository.exported.map(({ name, extension }) => ({ name, extension }))).toEqual([
       { name: "A-B- -C.pdf", extension: "pdf" },
       { name: "A-B- -C-scenes.csv", extension: "csv" },
+      { name: "A-B- -C-shooting-schedule.pdf", extension: "pdf" },
     ]);
     expect(repository.exported[0].bytes.byteLength).toBeGreaterThan(0);
     expect(repository.exported[1].bytes.byteLength).toBeGreaterThan(0);
+    expect(repository.exported[2].bytes.byteLength).toBeGreaterThan(0);
 
     session.setHeader("title", "   ");
     await session.exportPdf();
-    expect(repository.exported[2]).toMatchObject({ name: "Untitled.pdf", extension: "pdf" });
+    expect(repository.exported[3]).toMatchObject({ name: "Untitled.pdf", extension: "pdf" });
   });
 
   it("drops a save that finishes after a newer script has loaded", async () => {

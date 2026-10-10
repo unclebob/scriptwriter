@@ -144,6 +144,15 @@ export class ScriptSession {
     );
   }
 
+  async exportSchedule(): Promise<void> {
+    await this.flush();
+    const current = this.current();
+    const { renderSchedule } = await import("../export/pdf");
+    const derived = derive(current.document);
+    const bytes = await renderSchedule(current.script.title, derived.scenes, current.document.elements);
+    await this.repository.exportFile(`${fileStem(current.script.title)}-shooting-schedule.pdf`, "pdf", bytes);
+  }
+
   private load(opened: { root: string; text: string | null }) {
     this.generation += 1;
     this.clearTimer();

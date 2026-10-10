@@ -1,10 +1,11 @@
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFPage, PDFFont, rgb } from "pdf-lib";
 import monoFont from "dejavu-fonts-ttf/ttf/DejaVuSansMono.ttf?inline";
-import type { DocumentSnapshot } from "../domain/document";
+import type { DocumentSnapshot, PositionedElement } from "../domain/document";
 import type { Script } from "../domain/script";
 import { derive, type DerivedDocument } from "../projections/derived";
 import type { Placed } from "../projections/layout";
+import { scheduleLines, type SceneRow } from "../projections/scenes";
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
@@ -62,26 +63,49 @@ export function contactPosition(count: number, index: number): { x: number; y: n
 
 type PdfFont = { pdf: PDFFont; characters: ReadonlySet<number> };
 
+const SCHEDULE_LINES = 54;
+/** Width of an iPhone screen, in points. */
+const SCHEDULE_PAGE_WIDTH = 390;
+const SCHEDULE_MARGIN = 16;
+
 export async function renderPdf(
   script: Header,
   document: DocumentSnapshot,
   derived: DerivedDocument = derive(document),
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  const bytes = dataBytes(monoFont);
-  const parsed = fontkit.create(bytes);
-  const subset = true;
-  const fonts: PdfFont[] = [{
-    pdf: await pdf.embedFont(bytes, { subset }),
-    characters: new Set(parsed.characterSet),
-  }];
+  const fonts = await embedMono(pdf);
   titlePage(pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]), script, fonts);
   const numbers = new Map(derived.scenes.map((scene) => [scene.from, scene.number]));
   derived.pages.forEach((lines, index) => {
     scriptPage(pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]), lines, scriptPageNumber(index), numbers, fonts);
   });
   return pdf.save({ useObjectStreams: false });
+}
+
+export async function renderSchedule(
+  title: string,
+  rows: readonly SceneRow[],
+  elements: readonly PositionedElement[],
+): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const fonts = await embedMono(pdf);
+  const pages = chunkLines(scheduleLines(title, rows, elements), SCHEDULE_LINES);
+  pages.forEach((lines, index) => {
+    drawSchedulePage(pdf.addPage([SCHEDULE_PAGE_WIDTH, PAGE_HEIGHT]), lines, index + 1, fonts);
+  });
+  return pdf.save({ useObjectStreams: false });
+}
+
+async function embedMono(pdf: PDFDocument): Promise<PdfFont[]> {
+  pdf.registerFontkit(fontkit);
+  const bytes = dataBytes(monoFont);
+  const parsed = fontkit.create(bytes);
+  const subset = true;
+  return [{
+    pdf: await pdf.embedFont(bytes, { subset }),
+    characters: new Set(parsed.characterSet),
+  }];
 }
 
 function titlePage(page: PDFPage, script: Header, fonts: readonly PdfFont[]) {
@@ -116,9 +140,7 @@ function scriptPage(
   scenes: ReadonlyMap<number, number>,
   fonts: readonly PdfFont[],
 ) {
-  const label = String(number);
-  const pageNumber = pageNumberPosition(textWidth(label, fonts));
-  drawText(page, label, pageNumber.x, pageNumber.y, fonts);
+  drawPageNumber(page, number, fonts);
   lines.forEach((line, index) => {
     if (line.role === "blank") return;
     const y = lineY(index);
@@ -126,6 +148,38 @@ function scriptPage(
     const sceneNumber = line.source === undefined ? undefined : scenes.get(line.source);
     if (sceneNumber !== undefined) drawSceneNumber(page, sceneNumber, y, fonts);
   });
+}
+
+function drawSchedulePage(page: PDFPage, lines: readonly string[], number: number, fonts: readonly PdfFont[]) {
+  drawScheduleNumber(page, number, fonts);
+  lines.forEach((line, index) => drawScheduleLine(page, line, index, fonts));
+}
+
+function drawScheduleLine(page: PDFPage, line: string, index: number, fonts: readonly PdfFont[]) {
+  if (line === "") return;
+  drawText(page, line, SCHEDULE_MARGIN, lineY(index), fonts);
+}
+
+function drawScheduleNumber(page: PDFPage, number: number, fonts: readonly PdfFont[]) {
+  const label = String(number);
+  const x = SCHEDULE_PAGE_WIDTH - SCHEDULE_MARGIN - textWidth(label, fonts);
+  drawText(page, label, x, PAGE_HEIGHT - 36, fonts);
+}
+
+function drawPageNumber(page: PDFPage, number: number, fonts: readonly PdfFont[]) {
+  const label = String(number);
+  const place = pageNumberPosition(textWidth(label, fonts));
+  drawText(page, label, place.x, place.y, fonts);
+}
+
+function chunkLines(lines: readonly string[], size: number): string[][] {
+  const count = Math.max(1, Math.ceil(lines.length / size));
+  return Array.from({ length: count }, (_, index) => dropLeadingBlank(lines.slice(index * size, index * size + size)));
+}
+
+function dropLeadingBlank(lines: readonly string[]): string[] {
+  if (lines[0] === "") return lines.slice(1);
+  return [...lines];
 }
 
 function drawSceneNumber(page: PDFPage, sceneNumber: number, y: number, fonts: readonly PdfFont[]) {

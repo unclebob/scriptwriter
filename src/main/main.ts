@@ -111,6 +111,10 @@ document.querySelector<HTMLButtonElement>('[data-action="scenes"]')!.addEventLis
   closeMenus();
   void exportFile(() => session.exportScenes());
 });
+document.querySelector<HTMLButtonElement>('[data-action="schedule"]')!.addEventListener("click", () => {
+  closeMenus();
+  void exportFile(() => session.exportSchedule());
+});
 document.querySelector<HTMLButtonElement>('[data-action="find"]')!.addEventListener("click", () => {
   closeMenus();
   findInScript(editor);

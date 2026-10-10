@@ -171,6 +171,8 @@ An act names the scenes that follow it, until the next act. A scene before the f
 
 Export Scenes (⌘⇧L) writes a CSV, sorted by location and then by scene number.
 
+Shooting Schedule, in the File menu, writes a PDF of those same scenes in that same order. The scene numbers on it are the script's scene numbers. The schedule page is 390 points wide, the width of an iPhone screen, and US Letter tall. The screenplay PDF is US Letter. Each scene shows its location, the script page of its heading, its act, its actors, and every element after that heading and before the next scene heading or act.
+
 | Column | What it is |
 |---|---|
 | Location | The complete, opaque scene-heading text. |
@@ -183,4 +185,4 @@ Text cells that begin with spreadsheet formula characters, including after leadi
 
 ## What this is not
 
-No revision marks, no cards, no dual dialogue, no locked pages, no production reports. The script is the elements, the tab and return keys, the lists, and the page.
+No revision marks, no cards, no dual dialogue, no locked pages. The shooting schedule is those scenes, with every element, on a page narrow enough for an iPhone. The script is the elements, the tab and return keys, the lists, and the page.

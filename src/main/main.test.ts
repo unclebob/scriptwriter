@@ -188,6 +188,7 @@ document.body.innerHTML = `
             <button type="button" data-action="open">Open Script<kbd>⌘O</kbd></button>
             <button type="button" data-action="pdf">Export PDF<kbd>⌘⇧E</kbd></button>
             <button type="button" data-action="scenes">Export Scenes<kbd>⌘⇧L</kbd></button>
+            <button type="button" data-action="schedule">Shooting Schedule</button>
           </div>
         </div>
         <div class="menu">
@@ -542,6 +543,8 @@ describe("screen shell", () => {
     requiredButton('[data-action="scenes"]').click();
     await vi.waitFor(() => expect(exportsSeen.length).toBe(before + 1));
     expect(exportsSeen.at(-1)?.extension).toBe("csv");
+    requiredButton('[data-action="schedule"]').click();
+    await vi.waitFor(() => expect(exportsSeen.at(-1)?.suggestedName).toContain("shooting-schedule.pdf"));
 
     nextChoose = null;
     const openKey = key("o", { metaKey: true });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { elementsDocument, normalizeElements, type ScriptElement } from "../domain/document";
 import { pageStarts, paginate } from "./layout";
-import { outline, safeCsvField, sceneRows, scenesCsv, type SceneRow } from "./scenes";
+import { outline, safeCsvField, sceneRows, scenesCsv, scheduleLines, type SceneRow } from "./scenes";
 
 function document(elements: readonly Omit<ScriptElement, "blanksBefore">[]) {
   return elementsDocument(normalizeElements(elements));
@@ -85,6 +85,74 @@ describe("scene projection", () => {
       { type: "character", text: "MAL" },
     ]);
     expect(sceneRows(room, [])[0].actors).toEqual(["BOB", "ANN"]);
+  });
+
+  it("lists a shooting schedule by location, keeps the script scene numbers, and includes every element", () => {
+    const script = document([
+      { type: "action", text: "COLD OPEN" },
+      { type: "act", text: "ACT ONE" },
+      { type: "scene", text: "OFFICE" },
+      { type: "action", text: "Ann waits." },
+      { type: "character", text: "ANN" },
+      { type: "dialogue", text: "Coffee?" },
+      { type: "action", text: "" },
+      { type: "scene", text: "KITCHEN" },
+      { type: "character", text: "BOB (V.O.)" },
+      { type: "parenthetical", text: "(quietly)" },
+      { type: "dialogue", text: "Tea?" },
+      { type: "shot", text: "THE KETTLE" },
+      { type: "transition", text: "CUT TO:" },
+      { type: "act", text: "ACT TWO" },
+      { type: "character", text: "MAL" },
+      { type: "scene", text: "kitchen" },
+      { type: "action", text: "Later." },
+    ]);
+    const lines = scheduleLines("The Kettle", scenes(script), script.elements);
+    expect(lines).toEqual([
+      "The Kettle",
+      "SHOOTING SCHEDULE",
+      "",
+      "   2  KITCHEN",
+      "      page 2  ACT ONE",
+      "      BOB",
+      "",
+      "      BOB (V.O.)",
+      "      (quietly)",
+      "      Tea?",
+      "      THE KETTLE",
+      "      CUT TO:",
+      "",
+      "   3  kitchen",
+      "      page 3  ACT TWO",
+      "",
+      "      Later.",
+      "",
+      "   1  OFFICE",
+      "      page 2  ACT ONE",
+      "      ANN",
+      "",
+      "      Ann waits.",
+      "      ANN",
+      "      Coffee?",
+    ]);
+    expect(lines.join("\n")).not.toContain("COLD OPEN");
+    expect(lines.join("\n")).not.toContain("MAL");
+    expect(scheduleLines("  ", [], [])[0]).toBe("Untitled");
+  });
+
+  it("wraps the shooting schedule to the width of an iPhone screen", () => {
+    const wide = "A".repeat(60);
+    const wrapped = scheduleLines("T", [{
+      number: 7, page: 2, act: "", location: wide, actors: [], text: wide, from: 0,
+    }], []);
+    expect(wrapped).toContain(`   7  ${"A".repeat(43)}`);
+    expect(wrapped).toContain(`      ${"A".repeat(17)}`);
+    expect(wrapped).toContain("      page 2");
+    const titled = scheduleLines("T".repeat(60), [], []);
+    expect(titled[0]).toBe("T".repeat(49));
+    expect(titled[1]).toBe("T".repeat(11));
+    expect(titled[2]).toBe("SHOOTING SCHEDULE");
+    for (const line of [...wrapped, ...titled]) expect(line.length).toBeLessThanOrEqual(49);
   });
 
   it("sorts locations alphabetically, empty ones last, and equal locations by number", () => {
