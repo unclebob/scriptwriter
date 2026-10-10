@@ -590,13 +590,13 @@ fn start_unless_live(root: &Path, session: &str) -> Result<(), String> {
 
 fn session_live(session: &str) -> bool {
     matches!(
-        command_status("tmux", &tmux_args(&["has-session", "-t", session])),
+        tmux_status(&tmux_args(&["has-session", "-t", session])),
         Ok(0)
     )
 }
 
 fn launch_session(root: &Path, session: &str) -> Result<(), String> {
-    let code = command_status("tmux", &new_session_args(root, session))?;
+    let code = tmux_status(&new_session_args(root, session))?;
     started_session(root, session, code)
 }
 
@@ -607,24 +607,27 @@ fn started_session(root: &Path, session: &str, code: i32) -> Result<(), String> 
         ));
     }
     arm_respawn(session);
-    let _ = publish_terminal(root, session);
-    Ok(())
+    publish_terminal(root, session)
 }
 
 fn arm_respawn(session: &str) {
     let pane = format!("{session}:0.0");
-    let _ = command_status(
-        "tmux",
-        &tmux_args(&["set-option", "-p", "-t", &pane, "remain-on-exit", "on"]),
-    );
-    let _ = command_status(
-        "tmux",
-        &tmux_args(&["set-hook", "-t", session, "pane-died", "respawn-pane -k"]),
-    );
-    let _ = command_status(
-        "tmux",
-        &tmux_args(&["set-option", "-t", session, "status", "off"]),
-    );
+    let _ = tmux_status(&tmux_args(&[
+        "set-option",
+        "-p",
+        "-t",
+        &pane,
+        "remain-on-exit",
+        "on",
+    ]));
+    let _ = tmux_status(&tmux_args(&[
+        "set-hook",
+        "-t",
+        session,
+        "pane-died",
+        "respawn-pane -k",
+    ]));
+    let _ = tmux_status(&tmux_args(&["set-option", "-t", session, "status", "off"]));
 }
 
 fn publish_terminal(root: &Path, session: &str) -> Result<(), String> {
@@ -635,7 +638,14 @@ fn publish_terminal(root: &Path, session: &str) -> Result<(), String> {
             terminal_script(session, &applescript_title(root)),
         ],
     )?;
-    write_companion(root, session, first_number(&out).as_deref())
+    store_window(root, session, &out)
+}
+
+fn store_window(root: &Path, session: &str, out: &str) -> Result<(), String> {
+    let Some(window) = first_number(out) else {
+        return Err("Scriptwriter could not open the companion window.".to_string());
+    };
+    write_companion(root, session, Some(&window))
 }
 
 fn remember_companion(slot: &ActiveScript, root: &Path, session: &str) -> Result<(), String> {
@@ -683,11 +693,8 @@ fn stop_record(record: Option<CompanionProc>) {
 }
 
 fn stop_name(session: &str) {
-    let _ = command_status(
-        "tmux",
-        &tmux_args(&["set-hook", "-t", session, "-u", "pane-died"]),
-    );
-    let _ = command_status("tmux", &tmux_args(&["kill-session", "-t", session]));
+    let _ = tmux_status(&tmux_args(&["set-hook", "-t", session, "-u", "pane-died"]));
+    let _ = tmux_status(&tmux_args(&["kill-session", "-t", session]));
 }
 
 fn close_window(window: Option<&str>) {
@@ -790,6 +797,31 @@ fn tmux_args(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|part| (*part).to_string()).collect()
 }
 
+fn tmux_status(args: &[String]) -> Result<i32, String> {
+    command_status(&tmux_executable(), args).map_err(missing_tmux)
+}
+
+fn missing_tmux(error: String) -> String {
+    if error.contains("No such file") {
+        return "Scriptwriter could not find tmux.".to_string();
+    }
+    error
+}
+
+fn tmux_executable() -> String {
+    tmux_candidates()
+        .into_iter()
+        .find_map(|path| executable_file(&path))
+        .unwrap_or_else(|| "tmux".to_string())
+}
+
+fn tmux_candidates() -> Vec<String> {
+    vec![
+        "/usr/local/bin/tmux".into(),
+        "/opt/homebrew/bin/tmux".into(),
+    ]
+}
+
 fn grok_executable() -> String {
     if let Some(path) = env_executable("GROK_BIN") {
         return path;
@@ -847,17 +879,48 @@ fn executable_mode(path: &Path) -> bool {
     path.metadata().is_ok()
 }
 
+// Terminal.app stores each channel as 16-bit. These are uml-viewer draw/bg, draw/ink, and draw/gold.
+const TERMINAL_BG: &str = "{5654, 7196, 8224}";
+const TERMINAL_INK: &str = "{60652, 60652, 58596}";
+const TERMINAL_GOLD: &str = "{59624, 50372, 18504}";
+
 fn terminal_script(session: &str, title: &str) -> String {
     format!(
         "tell application \"Terminal\"\n\
          launch\n\
-         set grokTab to do script \"tmux attach -t {session}; exit\"\n\
+         set grokTab to do script \"{shell}\"\n\
+         set background color of grokTab to {bg}\n\
+         set normal text color of grokTab to {ink}\n\
+         set bold text color of grokTab to {gold}\n\
+         set cursor color of grokTab to {gold}\n\
+         set font name of grokTab to \"Menlo\"\n\
+         set font size of grokTab to 13\n\
          set custom title of grokTab to \"{title}\"\n\
          set title displays custom title of grokTab to true\n\
+         set title displays device name of grokTab to false\n\
+         set title displays shell path of grokTab to false\n\
+         try\n\
+         set title displays settings name of grokTab to false\n\
+         end try\n\
          set winID to id of front window\n\
          end tell\n\
-         return winID"
+         tell application \"System Events\"\n\
+         tell process \"Terminal\"\n\
+         try\n\
+         perform action \"AXRaise\" of (first window whose name contains \"{title}\")\n\
+         end try\n\
+         end tell\n\
+         end tell\n\
+         return winID",
+        shell = attach_command(session),
+        bg = TERMINAL_BG,
+        ink = TERMINAL_INK,
+        gold = TERMINAL_GOLD,
     )
+}
+
+fn attach_command(session: &str) -> String {
+    format!("{} attach -t {session}; exit", tmux_executable())
 }
 
 fn applescript_title(root: &Path) -> String {
@@ -952,7 +1015,34 @@ fn command_output(program: &str, args: &[String]) -> Result<String, String> {
         .args(args)
         .output()
         .map_err(|error| error.to_string())?;
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    checked_output(output)
+}
+
+fn checked_output(output: std::process::Output) -> Result<String, String> {
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+    Err(command_failure(&output))
+}
+
+fn command_failure(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        return stderr.trim().to_string();
+    }
+    stdout_or_fallback(output)
+}
+
+fn stdout_or_fallback(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    nonempty_or(stdout.trim())
+}
+
+fn nonempty_or(text: &str) -> String {
+    if text.is_empty() {
+        return "Scriptwriter could not open the companion window.".to_string();
+    }
+    text.to_string()
 }
 
 #[cfg(test)]
@@ -1181,9 +1271,33 @@ mod tests {
         assert_eq!(all_digits("15"), Some("15"));
         assert!(all_digits("").is_none());
         assert!(all_digits("15a").is_none());
-        assert!(terminal_script(&id, "Scriptwriter: My-Script").contains(&id));
+        let script = terminal_script(&id, "Scriptwriter: My-Script");
+        assert!(script.contains(&format!("attach -t {id}")));
+        assert!(script.contains(TERMINAL_BG));
+        assert!(script.contains(TERMINAL_INK));
+        assert!(script.contains(TERMINAL_GOLD));
+        assert!(script.contains("Menlo"));
+        assert!(script.contains("title displays settings name"));
+        assert!(script.contains("AXRaise"));
+        assert!(script.contains("Scriptwriter: My-Script"));
         assert!(close_terminal_script("15").contains("15"));
         assert_eq!(applescript_title(&nested), "Scriptwriter: My-Script");
+        assert!(started_session(&nested, &id, 1).is_err());
+        assert!(store_window(&nested, &id, "none").is_err());
+        assert_eq!(
+            missing_tmux("No such file or directory".into()),
+            "Scriptwriter could not find tmux."
+        );
+        assert_eq!(missing_tmux("busy".into()), "busy");
+        assert!(tmux_executable().ends_with("tmux"));
+        assert!(command_output("false", &[])
+            .unwrap_err()
+            .contains("could not open"));
+        let refused =
+            command_output("sh", &["-c".into(), "echo paint >&2; exit 1".into()]).unwrap_err();
+        assert!(refused.contains("paint"));
+        let echoed = command_output("sh", &["-c".into(), "echo typed; exit 1".into()]).unwrap_err();
+        assert!(echoed.contains("typed"));
         let slot = ActiveScript::default();
         slot.0.lock().unwrap().companion = Some(CompanionProc {
             session: "scriptwriter-old".into(),
