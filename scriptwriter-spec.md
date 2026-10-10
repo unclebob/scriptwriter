@@ -15,7 +15,7 @@ my-script/
 
 The folder is the only stored form. There is no database and no separate project file.
 
-`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. The application rewrites the file as you edit. An associated agent for that folder may write it too. When the file changes and the screen has no unsaved edit, Scriptwriter loads it and shows the change. The agent asks for that refresh by writing a new one-line token to `.scriptwriter/refresh`. Scriptwriter reads `script.json` and shows it.
+`script.json` is the whole script. The title, the credit, the author, the draft, and the contact are the title page. `elements` is the screenplay, in order. The application rewrites the file as you edit. An associated agent for that folder may write it too. When the file changes and the screen has no unsaved edit, Scriptwriter loads it and shows the change. The agent asks for that refresh by writing a new one-line token to `.scriptwriter/refresh`. Scriptwriter reads `script.json` and shows it, keeping the screen where it was scrolled.
 
 ```json
 {

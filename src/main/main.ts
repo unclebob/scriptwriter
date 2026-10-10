@@ -413,12 +413,33 @@ function showIfExternal(changed: boolean) {
 }
 
 function showExternal() {
-  const head = editor.view.state.selection.main.head;
+  const place = screenPlace();
   const loaded = loadedScript();
   if (!loaded) return;
-  applyLoaded(loaded);
-  editor.goto(head);
+  showHeld(loaded, place);
 }
+
+function showHeld(loaded: Script, place: ScreenPlace) {
+  applyLoaded(loaded);
+  editor.goto(place.head);
+  restoreScroll(place);
+  window.requestAnimationFrame(() => restoreScroll(place));
+}
+
+function screenPlace(): ScreenPlace {
+  return {
+    top: stage.scrollTop,
+    left: stage.scrollLeft,
+    head: editor.view.state.selection.main.head,
+  };
+}
+
+function restoreScroll(place: ScreenPlace) {
+  stage.scrollTop = place.top;
+  stage.scrollLeft = place.left;
+}
+
+type ScreenPlace = { top: number; left: number; head: number };
 
 function loadedScript() {
   const { script, document: loaded } = session.state;

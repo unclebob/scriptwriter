@@ -440,11 +440,30 @@ describe("screen shell", () => {
   });
 
   it("renders a script the companion wrote", async () => {
+    const stage = document.querySelector<HTMLElement>("#stage")!;
+    const scroll = trackScroll(stage);
+    scroll.top = 180;
+    scroll.left = 12;
+    moveCursor(5);
+    const setState = view.setState.bind(view);
+    view.setState = (state) => {
+      setState(state);
+      scroll.top = 0;
+      scroll.left = 0;
+    };
     externalText = JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "From the agent." }] });
-    await vi.waitFor(() => expect(elementName()).toBe("Action"));
-    expect(titleInput.value).toBe("Remote");
-    expect(view.state.doc.toString()).toContain("From the agent.");
-    expect(externalText).toBeNull();
+    try {
+      await vi.waitFor(() => expect(elementName()).toBe("Action"));
+      expect(titleInput.value).toBe("Remote");
+      expect(view.state.doc.toString()).toContain("From the agent.");
+      expect(externalText).toBeNull();
+      expect(scroll.top).toBe(180);
+      expect(scroll.left).toBe(12);
+      expect(cursor()).toBe(5);
+    } finally {
+      view.setState = setState;
+      scroll.release();
+    }
     await openKettle();
   });
 
@@ -690,6 +709,32 @@ function destination(index: number): { pos: number; name: string } {
 
 function reposition() {
   document.querySelector("#stage")!.dispatchEvent(new Event("scroll"));
+}
+
+function trackScroll(node: HTMLElement): { top: number; left: number; release(): void } {
+  const box = {
+    top: 0,
+    left: 0,
+    release() {
+      Reflect.deleteProperty(node, "scrollTop");
+      Reflect.deleteProperty(node, "scrollLeft");
+    },
+  };
+  Object.defineProperty(node, "scrollTop", {
+    configurable: true,
+    get: () => box.top,
+    set: (value: number) => {
+      box.top = value;
+    },
+  });
+  Object.defineProperty(node, "scrollLeft", {
+    configurable: true,
+    get: () => box.left,
+    set: (value: number) => {
+      box.left = value;
+    },
+  });
+  return box;
 }
 
 function clickMargin(x: number, y: number): number {
