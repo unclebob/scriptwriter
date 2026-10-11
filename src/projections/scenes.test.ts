@@ -87,7 +87,7 @@ describe("scene projection", () => {
     expect(sceneRows(room, [])[0].actors).toEqual(["BOB", "ANN"]);
   });
 
-  it("lists a shooting schedule by location, keeps the script scene numbers, and includes every element", () => {
+  it("lists a shooting schedule by location and names each character once", () => {
     const script = document([
       { type: "action", text: "COLD OPEN" },
       { type: "act", text: "ACT ONE" },
@@ -116,7 +116,6 @@ describe("scene projection", () => {
       "      page 2  ACT ONE",
       "      BOB",
       "",
-      "      BOB (V.O.)",
       "      (quietly)",
       "      Tea?",
       "      THE KETTLE",
@@ -132,12 +131,27 @@ describe("scene projection", () => {
       "      ANN",
       "",
       "      Ann waits.",
-      "      ANN",
       "      Coffee?",
     ]);
+    expect(lines.filter((line) => line.includes("BOB"))).toEqual(["      BOB"]);
+    expect(lines.filter((line) => line.includes("ANN"))).toEqual(["      ANN"]);
     expect(lines.join("\n")).not.toContain("COLD OPEN");
     expect(lines.join("\n")).not.toContain("MAL");
     expect(scheduleLines("  ", [], [])[0]).toBe("Untitled");
+  });
+
+  it("keeps both speeches when a character speaks twice", () => {
+    const room = document([
+      { type: "scene", text: "ROOM" },
+      { type: "character", text: "BOB" },
+      { type: "dialogue", text: "One." },
+      { type: "character", text: "BOB (V.O.)" },
+      { type: "dialogue", text: "Two." },
+    ]);
+    const lines = scheduleLines("T", sceneRows(room, []), room.elements);
+    expect(lines.filter((line) => line.includes("BOB"))).toEqual(["      BOB"]);
+    expect(lines).toContain("      One.");
+    expect(lines).toContain("      Two.");
   });
 
   it("wraps the shooting schedule to the width of an iPhone screen", () => {

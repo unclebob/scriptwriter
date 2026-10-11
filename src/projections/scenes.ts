@@ -149,8 +149,13 @@ function elementLines(elements: readonly PositionedElement[]): string[] {
 }
 
 function elementText(element: PositionedElement): string[] {
-  if (element.text.trim() === "") return [];
+  if (omitElement(element)) return [];
   return wrapText(element.text, CONTENT_WIDTH).map(gutterLine);
+}
+
+function omitElement(element: PositionedElement): boolean {
+  if (element.type === "character") return true;
+  return element.text.trim() === "";
 }
 
 function gutterLine(line: string): string {
