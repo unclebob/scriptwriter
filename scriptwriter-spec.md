@@ -62,7 +62,7 @@ A parenthetical is a whole line in parentheses. The editor keeps the parentheses
 
 ## What a line is
 
-Each element is one line in the editor. A blank line is the space before the next element. It is not an element. The status bar calls it Blank. The left margin does not name it. Typing, Delete, and Backspace do not change it. Wrapping is done by the editor and by the PDF. The file does not hard-wrap.
+Each element is one line in the editor. A blank line is the space before the next element. It is not an element. The status bar calls it Blank. The left margin does not name it. Typing does not change it. Delete or Backspace on the blank line before an action removes that blank. On any other blank line, Delete and Backspace do nothing. Wrapping is done by the editor and by the PDF. The file does not hard-wrap.
 
 CodeMirror stores the visible text and an explicit element type for every element line. Blank separator lines have no type. Text and type metadata change in the same undoable transaction. Saving combines that visible text and metadata directly; it does not classify text.
 
@@ -98,7 +98,7 @@ Tab cycles through every element type, in the order below, and then back to the 
 | Shot | Act | Transition |
 | Act | Scene Heading | Shot |
 
-Backspace in an empty element removes it and returns to the end of the previous element. Backspace at the start of a line and Delete at the end of an element do not join elements.
+Backspace or Delete in an empty element removes it and returns to the end of the previous element. Backspace at the start of a line and Delete at the end of a non-empty element do not join elements.
 
 A selection inside one element selects that text. Copy and Delete act on those characters. A selection that reaches another element expands to cover every element from the first one it touches through the last. Copy takes those elements. Delete removes them. Pasting that copy inserts the elements after the element the cursor is in, or replaces the elements the selection covers.
 

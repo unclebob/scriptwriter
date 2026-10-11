@@ -266,15 +266,39 @@ describe("typed editing", () => {
     expect(backspace(original, original.elements[0].from + 1)).toBeNull();
   });
 
-  it("leaves a blank line unchanged on Backspace", () => {
+  it("removes the blank line before an action", () => {
     const original = doc([
-      { type: "scene", text: "ROOM" },
-      { type: "action", text: "Wait." },
+      { type: "action", text: "Hello." },
+      { type: "action", text: "World." },
     ]);
     const blank = original.elements[0].to + 1;
-    const edit = backspace(original, blank);
-    expect(edit?.document).toBe(original);
-    expect(edit?.cursor).toBe(blank);
+    const removed = backspace(original, blank);
+    expect(next(removed!).elements.map(({ type, text, blanksBefore }) => ({ type, text, blanksBefore }))).toEqual([
+      { type: "action", text: "Hello.", blanksBefore: 0 },
+      { type: "action", text: "World.", blanksBefore: 0 },
+    ]);
+    expect(removed!.cursor).toBe(next(removed!).elements[1].from);
+    expect(next(deleteForward(original, blank)!).text).toBe("Hello.\nWorld.");
+  });
+
+  it("leaves the blank line before a character", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "character", text: "BOB" },
+    ]);
+    const blank = original.elements[0].to + 1;
+    expect(backspace(original, blank)?.document).toBe(original);
+    expect(deleteForward(original, blank)?.document).toBe(original);
+  });
+
+  it("removes an empty action when Delete is pressed in it", () => {
+    const original = doc([
+      { type: "scene", text: "ROOM" },
+      { type: "action", text: "" },
+    ]);
+    const removed = deleteForward(original, original.elements[1].from);
+    expect(removed?.document.text).toBe("ROOM");
+    expect(removed?.cursor).toBe(original.elements[0].to);
   });
 
   it("lets Delete remove a character inside an element", () => {

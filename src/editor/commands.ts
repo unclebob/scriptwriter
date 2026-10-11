@@ -122,7 +122,7 @@ function separatorLine(type: LineType, elements: number): boolean {
   return type === null && elements > 0;
 }
 
-/** Removes an empty element. Returns null when Backspace should delete a character. */
+/** Removes an empty element, or the blank line before an action. Returns null when Backspace should delete a character. */
 export function backspace(document: DocumentSnapshot, cursor: number): Edit | null {
   const element = elementAt(document, cursor);
   if (!element) return backspaceBlank(document, cursor);
@@ -130,7 +130,7 @@ export function backspace(document: DocumentSnapshot, cursor: number): Edit | nu
 }
 
 function backspaceBlank(document: DocumentSnapshot, cursor: number): Edit | null {
-  if (lineAt(document, cursor).type === null) return unchanged(document, cursor);
+  if (lineAt(document, cursor).type === null) return dropActionBlank(document, cursor);
   return null;
 }
 
@@ -140,11 +140,54 @@ function backspaceElement(document: DocumentSnapshot, element: PositionedElement
   return null;
 }
 
-/** Stops Delete at the end of an element. Returns null when Delete should delete a character. */
+/** Removes an empty element, or the blank line before an action. Returns null when Delete should delete a character. */
 export function deleteForward(document: DocumentSnapshot, cursor: number): Edit | null {
   const element = elementAt(document, cursor);
-  if (!element || cursor >= element.to) return unchanged(document, cursor);
+  if (!element) return forwardBlank(document, cursor);
+  return forwardElement(document, element, cursor);
+}
+
+function forwardBlank(document: DocumentSnapshot, cursor: number): Edit | null {
+  if (lineAt(document, cursor).type === null) return dropActionBlank(document, cursor);
+  return unchanged(document, cursor);
+}
+
+function forwardElement(document: DocumentSnapshot, element: PositionedElement, cursor: number): Edit | null {
+  if (emptyElement(element)) return removeElement(document, element);
+  return forwardInside(document, element, cursor);
+}
+
+function forwardInside(document: DocumentSnapshot, element: PositionedElement, cursor: number): Edit | null {
+  if (cursor >= element.to) return unchanged(document, cursor);
   return null;
+}
+
+function dropActionBlank(document: DocumentSnapshot, cursor: number): Edit {
+  const line = lineAt(document, cursor).number;
+  const next = elementAfter(document, line);
+  if (!actionBlank(next)) return unchanged(document, cursor);
+  return removeBlank(document, line, next);
+}
+
+function actionBlank(element: PositionedElement | null): element is PositionedElement {
+  return element !== null && element.type === "action";
+}
+
+function elementAfter(document: DocumentSnapshot, line: number): PositionedElement | null {
+  for (const element of document.elements) {
+    if (element.line > line) return element;
+  }
+  return null;
+}
+
+function removeBlank(document: DocumentSnapshot, line: number, next: PositionedElement): Edit {
+  const lines = editableLines(document);
+  lines.splice(line, 1);
+  return atElement(result(lines, 0).document, next.index);
+}
+
+function atElement(document: EditorDocument, index: number): Edit {
+  return { document, cursor: snapshot(document).elements[index].from };
 }
 
 /** True when an edit would type on a separator line or join logical lines. */

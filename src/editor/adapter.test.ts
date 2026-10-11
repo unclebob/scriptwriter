@@ -481,6 +481,41 @@ describe("CodeMirror typed adapter", () => {
     editor.view.destroy();
   });
 
+  it("deletes a blank action line", () => {
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = createEditor(
+      parent,
+      normalizeElements([
+        { type: "scene", text: "ROOM" },
+        { type: "action", text: "" },
+      ]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    editor.goto(editor.getDocument().elements[1].from);
+    pressKey(editor, "Delete");
+    expect(editor.getDocument().elements.map(({ type, text }) => ({ type, text }))).toEqual([
+      { type: "scene", text: "ROOM" },
+    ]);
+
+    editor.setElements(normalizeElements([
+      { type: "action", text: "Hello." },
+      { type: "action", text: "World." },
+    ]));
+    editor.goto(editor.getDocument().elements[0].to + 1);
+    pressKey(editor, "Backspace");
+    expect(editor.getDocument().text).toBe("Hello.\nWorld.");
+    editor.setElements(normalizeElements([
+      { type: "action", text: "Hello." },
+      { type: "action", text: "World." },
+    ]));
+    editor.goto(editor.getDocument().elements[0].to + 1);
+    pressKey(editor, "Delete");
+    expect(editor.getDocument().text).toBe("Hello.\nWorld.");
+    parent.remove();
+    editor.view.destroy();
+  });
+
   it("removes every element a selection covers", () => {
     const parent = document.createElement("div");
     document.body.append(parent);
