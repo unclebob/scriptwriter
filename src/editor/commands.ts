@@ -13,6 +13,7 @@ import {
   type PositionedElement,
   type ScriptElement,
 } from "../domain/document";
+import type { StoredElement } from "../domain/script";
 import {
   blanksBefore,
   convertText,
@@ -248,7 +249,7 @@ export function insertElements(
   document: DocumentSnapshot,
   from: number,
   to: number,
-  incoming: readonly ScriptElement[],
+  incoming: readonly StoredElement[],
 ): Edit | null {
   if (incoming.length === 0) return unchanged(document, from);
   const covered = elementsCovered(document, from, to);
@@ -260,7 +261,7 @@ function insertAround(
   document: DocumentSnapshot,
   from: number,
   to: number,
-  incoming: readonly ScriptElement[],
+  incoming: readonly StoredElement[],
 ): Edit {
   if (isOpeningPlaceholder(document)) {
     return replaceElements(document, 0, storableElements(document).length, incoming);
@@ -534,14 +535,14 @@ function replaceElements(
   document: DocumentSnapshot,
   index: number,
   count: number,
-  incoming: readonly ScriptElement[],
+  incoming: readonly StoredElement[],
 ): Edit {
   const elements = storableElements(document);
   elements.splice(index, count, ...storedIncoming(incoming, index));
   return finishReplace(document, elements, index, incoming.length);
 }
 
-function storedIncoming(incoming: readonly ScriptElement[], index: number): ScriptElement[] {
+function storedIncoming(incoming: readonly StoredElement[], index: number): ScriptElement[] {
   return normalizeElements(incoming).map((element, offset) => ({
     ...element,
     blanksBefore: keptBlank(element, offset, index),

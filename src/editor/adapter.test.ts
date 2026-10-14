@@ -332,6 +332,33 @@ describe("CodeMirror typed adapter", () => {
     target.view.destroy();
   });
 
+  it("uses the type default when a pasted element omits blanksBefore", () => {
+    const parent = document.createElement("div");
+    const target = createEditor(
+      parent,
+      normalizeElements([{ type: "action", text: "Stay." }]),
+      { onChange: () => undefined, onCursor: () => undefined },
+    );
+    const end = target.view.state.doc.length;
+    target.view.dispatch({ selection: { anchor: end, head: end } });
+    const mime = "application/x-scriptwriter-elements+json";
+    dispatchClipboard(target, "paste", {
+      [mime]: JSON.stringify([
+        { type: "action", text: "Go." },
+        { type: "dialogue", text: "Hi." },
+        { type: "dialogue", text: "Loud.", blanksBefore: 1 },
+      ]),
+      "text/plain": "Go.\nHi.\nLoud.",
+    });
+    expect(target.getDocument().elements.map(({ type, text, blanksBefore }) => ({ type, text, blanksBefore }))).toEqual([
+      { type: "action", text: "Stay.", blanksBefore: 0 },
+      { type: "action", text: "Go.", blanksBefore: 1 },
+      { type: "dialogue", text: "Hi.", blanksBefore: 0 },
+      { type: "dialogue", text: "Loud.", blanksBefore: 1 },
+    ]);
+    target.view.destroy();
+  });
+
   it("leaves the script unchanged when the clipboard is not a list of elements", () => {
     const parent = document.createElement("div");
     const editor = createEditor(

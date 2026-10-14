@@ -12,6 +12,7 @@ import {
   type ScriptElement,
 } from "../domain/document";
 import { ELEMENT_KEY, ELEMENT_LABEL, isElementType, type ElementType } from "../domain/elements";
+import type { StoredElement } from "../domain/script";
 import {
   afterInput,
   backspace,
@@ -645,7 +646,7 @@ function pastedElements(document: DocumentSnapshot, from: number, to: number, da
 
 const ELEMENT_CLIPBOARD = "application/x-scriptwriter-elements+json";
 
-function parseClipboardElements(encoded: string): ScriptElement[] | null {
+function parseClipboardElements(encoded: string): StoredElement[] | null {
   if (!encoded) return null;
   const value = clipboardJson(encoded);
   if (!Array.isArray(value)) return null;
@@ -660,8 +661,8 @@ function clipboardJson(encoded: string): unknown {
   }
 }
 
-function clipboardList(value: unknown[]): ScriptElement[] | null {
-  const elements: ScriptElement[] = [];
+function clipboardList(value: unknown[]): StoredElement[] | null {
+  const elements: StoredElement[] = [];
   for (const item of value) {
     const element = clipboardElement(item);
     if (!element) return null;
@@ -670,7 +671,7 @@ function clipboardList(value: unknown[]): ScriptElement[] | null {
   return elements;
 }
 
-function clipboardElement(item: unknown): ScriptElement | null {
+function clipboardElement(item: unknown): StoredElement | null {
   if (!clipboardRecord(item)) return null;
   return clipboardFields(item);
 }
@@ -679,9 +680,15 @@ function clipboardRecord(item: unknown): item is Record<string, unknown> {
   return typeof item === "object" && item !== null;
 }
 
-function clipboardFields(item: Record<string, unknown>): ScriptElement | null {
+function clipboardFields(item: Record<string, unknown>): StoredElement | null {
   if (!clipboardType(item.type) || !clipboardText(item.text)) return null;
-  return { type: item.type, text: item.text, blanksBefore: item.blanksBefore === 0 ? 0 : 1 };
+  return { type: item.type, text: item.text, ...clipboardBlanks(item.blanksBefore) };
+}
+
+function clipboardBlanks(value: unknown): { blanksBefore?: number } {
+  if (value === undefined) return {};
+  if (value === 0) return { blanksBefore: 0 };
+  return { blanksBefore: 1 };
 }
 
 function clipboardType(value: unknown): value is ElementType {
