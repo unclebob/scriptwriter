@@ -14,6 +14,28 @@ export type Script = {
 
 type Header = Pick<Script, "title" | "credit" | "author" | "contact" | "draft">;
 
+export type OpenScript = {
+  root: string;
+  title: string;
+  credit: string;
+  author: string;
+  contact: string;
+  draft: string;
+  warnings: string[];
+};
+
+export function openScript(script: Script): OpenScript {
+  return {
+    root: script.root,
+    title: script.title,
+    credit: script.credit,
+    author: script.author,
+    contact: script.contact,
+    draft: script.draft,
+    warnings: script.warnings,
+  };
+}
+
 export type StoredElement = {
   type: ElementType;
   /** Text the writer sees. A parenthetical includes its parentheses. */

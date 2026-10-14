@@ -88,6 +88,7 @@ describe("script session", () => {
       title: "Changed",
       elements: [{ type: "action", text: "INT. IS PLAIN TEXT" }],
     });
+    expect(session.state.script).not.toHaveProperty("elements");
     expect(session.needsSave()).toBe(false);
   });
 

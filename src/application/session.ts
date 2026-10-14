@@ -1,5 +1,5 @@
 import { elementsDocument, storableElements, type DocumentSnapshot } from "../domain/document";
-import { serializeScript, storedScript, type Script } from "../domain/script";
+import { openScript, serializeScript, storedScript, type OpenScript } from "../domain/script";
 import type { ExternalScript, ScriptRepository } from "./repository";
 import { derive } from "../projections/derived";
 import { scenesCsv } from "../projections/scenes";
@@ -8,7 +8,7 @@ export type SessionStatus = "empty" | "loading" | "ready" | "saving" | "error";
 
 export type SessionState = {
   status: SessionStatus;
-  script: Script | null;
+  script: OpenScript | null;
   document: DocumentSnapshot | null;
   revision: number;
   savedRevision: number;
@@ -204,13 +204,13 @@ export class ScriptSession {
   private load(opened: { root: string; text: string | null }) {
     this.generation += 1;
     this.clearTimer();
-    const script = storedScript(opened.root, opened.text);
+    const parsed = storedScript(opened.root, opened.text);
     const revision = 0;
     const savedRevision = 0;
     this.stateValue = {
       status: "ready",
-      script,
-      document: elementsDocument(script.elements),
+      script: openScript(parsed),
+      document: elementsDocument(parsed.elements),
       revision,
       savedRevision,
       error: null,
@@ -238,7 +238,7 @@ export class ScriptSession {
     }
   }
 
-  private current(): { script: Script; document: DocumentSnapshot } {
+  private current(): { script: OpenScript; document: DocumentSnapshot } {
     const script = this.stateValue.script;
     const document = this.stateValue.document;
     if (!script) throw new Error("No script is open.");

@@ -2,7 +2,7 @@ import "./styles.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScriptSession } from "../application/session";
 import { elementAt, type DocumentSnapshot } from "../domain/document";
-import type { Script } from "../domain/script";
+import type { OpenScript } from "../domain/script";
 import { ELEMENT_LABEL, ELEMENTS } from "../domain/elements";
 import { TauriScriptRepository } from "../infrastructure/tauriRepository";
 import type { OutlineRow } from "../projections/scenes";
@@ -381,7 +381,7 @@ function restoreEditing() {
 function showLoaded() {
   const loaded = loadedScript();
   if (!loaded) return;
-  applyLoaded(loaded);
+  applyLoaded(loaded.script, loaded.document);
   void openCompanion();
 }
 
@@ -419,8 +419,8 @@ function showExternal() {
   showHeld(loaded, place);
 }
 
-function showHeld(loaded: Script, place: ScreenPlace) {
-  applyLoaded(loaded);
+function showHeld(loaded: { script: OpenScript; document: DocumentSnapshot }, place: ScreenPlace) {
+  applyLoaded(loaded.script, loaded.document);
   editor.goto(place.head);
   restoreScroll(place);
   window.requestAnimationFrame(() => restoreScroll(place));
@@ -441,19 +441,15 @@ function restoreScroll(place: ScreenPlace) {
 
 type ScreenPlace = { top: number; left: number; head: number };
 
-function loadedScript() {
+function loadedScript(): { script: OpenScript; document: DocumentSnapshot } | null {
   const { script, document: loaded } = session.state;
-  if (missingLoaded(script, loaded)) return null;
-  return script;
+  if (!script || !loaded) return null;
+  return { script, document: loaded };
 }
 
-function missingLoaded(script: object | null, loaded: object | null): boolean {
-  return !script || !loaded;
-}
-
-function applyLoaded(script: Script) {
+function applyLoaded(script: OpenScript, loaded: DocumentSnapshot) {
   fillHeader(script);
-  editor.setElements(script.elements);
+  editor.setElements(loaded.elements);
   session.adoptLoadedDocument(editor.getDocument());
   sceneKey = "";
   showScriptWarnings(script.warnings);
@@ -463,7 +459,7 @@ function applyLoaded(script: Script) {
   editor.focus();
 }
 
-function fillHeader(script: Script) {
+function fillHeader(script: OpenScript) {
   titleInput.value = script.title;
   creditInput.value = script.credit;
   authorInput.value = script.author;
