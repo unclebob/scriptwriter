@@ -19,29 +19,40 @@ export type OutlineRow = {
   number: number | null;
 };
 
-export function sceneRows(document: DocumentSnapshot, pageStarts: readonly number[]): SceneRow[] {
-  const rows: SceneRow[] = [];
+export function sceneIndex(
+  document: DocumentSnapshot,
+  pageStarts: readonly number[],
+): { scenes: SceneRow[]; outline: OutlineRow[] } {
+  const scenes: SceneRow[] = [];
+  const outline: OutlineRow[] = [];
   let act = "";
   let number = 0;
   for (let index = 0; index < document.elements.length; index += 1) {
     const element = document.elements[index];
     if (element.type === "act") {
       act = element.text.trim();
+      outline.push({ kind: "act", text: act || "Act", from: element.from, number: null });
       continue;
     }
     if (element.type !== "scene") continue;
     number += 1;
-    rows.push({
+    const location = element.text.trim();
+    scenes.push({
       number,
       page: pageFor(element.from, pageStarts),
       act,
-      location: element.text.trim(),
+      location,
       actors: actorsAfter(document.elements, index),
       text: element.text,
       from: element.from,
     });
+    outline.push({ kind: "scene", text: location || "Scene", from: element.from, number });
   }
-  return rows;
+  return { scenes, outline };
+}
+
+export function sceneRows(document: DocumentSnapshot, pageStarts: readonly number[]): SceneRow[] {
+  return sceneIndex(document, pageStarts).scenes;
 }
 
 function pageFor(source: number, pageStarts: readonly number[]): number {
@@ -69,18 +80,7 @@ function actorsAfter(elements: readonly PositionedElement[], index: number): str
 }
 
 export function outline(document: DocumentSnapshot): OutlineRow[] {
-  const rows: OutlineRow[] = [];
-  let number = 0;
-  for (const element of document.elements) {
-    if (element.type === "act") {
-      rows.push({ kind: "act", text: element.text.trim() || "Act", from: element.from, number: null });
-      continue;
-    }
-    if (element.type !== "scene") continue;
-    number += 1;
-    rows.push({ kind: "scene", text: element.text.trim() || "Scene", from: element.from, number });
-  }
-  return rows;
+  return sceneIndex(document, []).outline;
 }
 
 /** Mono characters that fit the 390-point shooting-schedule page. */

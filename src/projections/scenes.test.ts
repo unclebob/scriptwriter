@@ -50,6 +50,23 @@ describe("scene projection", () => {
     ]);
   });
 
+  it("numbers an empty act once for the outline and the rows", () => {
+    const empty = document([
+      { type: "act", text: "  " },
+      { type: "scene", text: "" },
+      { type: "scene", text: "ROOM" },
+    ]);
+    expect(outline(empty).map((row) => [row.kind, row.number, row.text])).toEqual([
+      ["act", null, "Act"],
+      ["scene", 1, "Scene"],
+      ["scene", 2, "ROOM"],
+    ]);
+    expect(sceneRows(empty, []).map((row) => [row.number, row.act, row.location])).toEqual([
+      [1, "", ""],
+      [2, "", "ROOM"],
+    ]);
+  });
+
   it("neutralizes formulas after whitespace or control characters and still quotes CSV", () => {
     for (const value of ["=SUM(A1)", "+1", "-2", "@cmd", "  =1", "\t@x"]) {
       expect(safeCsvField(value).startsWith("'")).toBe(true);

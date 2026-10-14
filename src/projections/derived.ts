@@ -1,6 +1,6 @@
 import type { DocumentSnapshot } from "../domain/document";
 import { pageStarts, paginate, type Placed } from "./layout";
-import { outline, sceneRows, type OutlineRow, type SceneRow } from "./scenes";
+import { sceneIndex, type OutlineRow, type SceneRow } from "./scenes";
 
 export type DerivedDocument = {
   pages: readonly Placed[][];
@@ -18,11 +18,12 @@ export function derive(document: DocumentSnapshot): DerivedDocument {
   derivations += 1;
   const pages = paginate(document);
   const starts = pageStarts(pages);
+  const indexed = sceneIndex(document, starts);
   const value: DerivedDocument = {
     pages,
     pageStarts: starts,
-    outline: outline(document),
-    scenes: sceneRows(document, starts),
+    outline: indexed.outline,
+    scenes: indexed.scenes,
   };
   cache.set(document, value);
   return value;
