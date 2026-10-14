@@ -29,7 +29,6 @@ export function characterNames(document: DocumentSnapshot): string[] {
   return names;
 }
 
-/** The other person in the current scene, once two characters have spoken. */
 export function otherSpeaker(document: DocumentSnapshot, before: number): string | null {
   return earlierSpeaker(speakersBefore(document, before));
 }

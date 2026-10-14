@@ -19,7 +19,7 @@ import {
   useElement,
   type ScriptEditor,
 } from "./adapter";
-import { pageBreakOffsets, scriptDecorations } from "./decorations";
+import { pageRuleOffsets, scriptDecorations } from "./decorations";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
@@ -276,7 +276,7 @@ describe("CodeMirror typed adapter", () => {
       { onChange: () => undefined, onCursor: () => undefined },
     );
     const dialogue = editor.getDocument().elements[1];
-    const marks = pageBreakOffsets(editor.view.state);
+    const marks = pageRuleOffsets(editor.view.state);
     expect(marks.length).toBeGreaterThan(0);
     expect(marks.some((from) => from > dialogue.from && from < dialogue.to)).toBe(true);
     expect(editor.view.contentDOM.querySelector(".page-rule")).toBeNull();

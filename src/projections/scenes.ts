@@ -19,7 +19,6 @@ export type OutlineRow = {
   number: number | null;
 };
 
-/** Scenes in script order. The number is derived, never stored. */
 export function sceneRows(document: DocumentSnapshot, pageStarts: readonly number[]): SceneRow[] {
   const rows: SceneRow[] = [];
   let act = "";
@@ -69,7 +68,6 @@ function actorsAfter(elements: readonly PositionedElement[], index: number): str
   return actors;
 }
 
-/** Acts and scene headings in script order, for the list beside the page. */
 export function outline(document: DocumentSnapshot): OutlineRow[] {
   const rows: OutlineRow[] = [];
   let number = 0;
@@ -90,7 +88,6 @@ const LINE_WIDTH = 49;
 const GUTTER = "      ";
 const CONTENT_WIDTH = LINE_WIDTH - GUTTER.length;
 
-/** Lines for a shooting schedule, sorted by location. Scene numbers stay the script's numbers. */
 export function scheduleLines(
   title: string,
   rows: readonly SceneRow[],
@@ -185,7 +182,6 @@ function actorLines(actors: readonly string[]): string[] {
   return wrapText(actors.join(", "), CONTENT_WIDTH).map(gutterLine);
 }
 
-/** CSV sorted by the complete, opaque scene heading, then by scene number. */
 export function scenesCsv(rows: readonly SceneRow[]): string {
   const lines = ["Location,Scene,Page,Act,Actors"];
   for (const row of [...rows].sort(byLocation)) {

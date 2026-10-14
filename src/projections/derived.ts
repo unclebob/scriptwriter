@@ -28,7 +28,6 @@ export function derive(document: DocumentSnapshot): DerivedDocument {
   return value;
 }
 
-/** Test instrumentation for the once-per-revision contract. */
 export function derivationCount(): number {
   return derivations;
 }

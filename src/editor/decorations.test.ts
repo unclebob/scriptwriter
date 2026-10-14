@@ -3,7 +3,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, WidgetType, type LayerMarker } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 import { elementsDocument, normalizeElements, type ScriptElement } from "../domain/document";
-import { PageRule, SceneNumber, pageBreakOffsets, pageRuleLayer, scriptDecorations } from "./decorations";
+import { PageRule, SceneNumber, pageRuleOffsets, pageRuleLayer, scriptDecorations } from "./decorations";
 import { metadataExtensions, replaceLineTypes } from "./state";
 
 function stateFor(elements: readonly Omit<ScriptElement, "blanksBefore">[]) {
@@ -63,10 +63,10 @@ describe("screenplay decorations", () => {
     expect(scene?.spec.side).toBe(-1);
     expect((scene?.spec.widget as SceneNumber).toDOM().textContent).toContain("1");
     expect(widgets.some((range) => range.spec.widget instanceof PageRule)).toBe(false);
-    expect(pageBreakOffsets(state).length).toBeGreaterThan(0);
+    expect(pageRuleOffsets(state).length).toBeGreaterThan(0);
     const actionOnly = stateFor([{ type: "action", text: "Hello" }]);
     expect(specs(actionOnly).some((range) => range.spec.widget instanceof SceneNumber)).toBe(false);
-    expect(pageBreakOffsets(actionOnly)).toEqual([]);
+    expect(pageRuleOffsets(actionOnly)).toEqual([]);
   });
 
   it("draws a page rule over the sheet and keeps the line whole", async () => {
@@ -88,20 +88,20 @@ describe("screenplay decorations", () => {
         extensions: [metadataExtensions(documentSnapshot), scriptDecorations, pageRuleLayer],
       }),
     });
-    const breaks = pageBreakOffsets(view.state);
-    expect(breaks.length).toBeGreaterThan(0);
-    expect(breaks.every((at) => at > 0 && at < view.state.doc.length)).toBe(true);
+    const offsets = pageRuleOffsets(view.state);
+    expect(offsets.length).toBeGreaterThan(0);
+    expect(offsets.every((at) => at > 0 && at < view.state.doc.length)).toBe(true);
     expect(view.contentDOM.querySelector(".page-rule")).toBeNull();
     expect(view.contentDOM.querySelectorAll(".cm-line").length).toBe(view.state.doc.lines);
     await paint();
     const rules = [...view.dom.querySelectorAll(".page-rule")];
-    expect(rules.length).toBe(breaks.length);
+    expect(rules.length).toBe(offsets.length);
     for (const rule of rules) {
       expect(rule.closest(".cm-line")).toBeNull();
       expect(rule.closest(".cm-content")).toBeNull();
       expect(rule.className).toBe("page-rule");
     }
-    const at = breaks[0];
+    const at = offsets[0];
     view.dispatch({ selection: { anchor: at - 4, head: at + 4 } });
     expect(view.state.selection.main.from).toBe(at - 4);
     expect(view.state.selection.main.to).toBe(at + 4);

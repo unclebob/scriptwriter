@@ -36,7 +36,6 @@ export class SceneNumber extends WidgetType {
   }
 }
 
-/** A page rule drawn over the sheet. It is not part of the text. */
 export class PageRule implements LayerMarker {
   constructor(
     readonly label: string,
@@ -116,8 +115,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   return Decoration.set(ranges, sort);
 }
 
-/** Source offsets where a page rule is drawn. The rule is an overlay, not a break in the line. */
-export function pageBreakOffsets(state: EditorState): number[] {
+export function pageRuleOffsets(state: EditorState): number[] {
   const length = state.doc.length;
   return derive(documentOf(state)).pageStarts.map((source) => Math.min(source, length));
 }
@@ -135,7 +133,7 @@ function pageRulesMoved(update: ViewUpdate): boolean {
 }
 
 function pageRuleMarkers(view: EditorView): readonly LayerMarker[] {
-  return pageBreakOffsets(view.state).flatMap((at, index) => placedRule(view, at, index));
+  return pageRuleOffsets(view.state).flatMap((at, index) => placedRule(view, at, index));
 }
 
 function placedRule(view: EditorView, at: number, index: number): PageRule[] {

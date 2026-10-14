@@ -249,7 +249,6 @@ export function pageAt(pages: readonly Placed[][], pos: number): { page: number;
   return { page, pages: Math.max(pages.length, 1) };
 }
 
-/** Source offsets where a page after the first one begins. */
 export function pageStarts(pages: readonly Placed[][]): number[] {
   const starts: number[] = [];
   for (let i = 1; i < pages.length; i += 1) {

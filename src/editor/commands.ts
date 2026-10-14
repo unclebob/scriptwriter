@@ -198,7 +198,6 @@ export function structuralEdit(document: DocumentSnapshot, from: number, to: num
   return document.text.slice(start, end).includes("\n");
 }
 
-/** Elements whose visible text the range touches. */
 export function elementsCovered(
   document: DocumentSnapshot,
   from: number,

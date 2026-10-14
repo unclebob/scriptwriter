@@ -226,7 +226,6 @@ const scriptTheme = EditorView.theme({
   ".cm-tooltip.cm-tooltip-autocomplete": { overflow: "hidden" },
 });
 
-/** The rectangle the completion menu may occupy: the window, and no further than the page stage. */
 export function completionBounds(windowBox: Rect, stageBox: Rect | null): Rect {
   const limit = stageBox === null ? windowBox : stageBox;
   return {
@@ -312,7 +311,6 @@ function closestLine(element: Element | null): Element | null {
   return element.closest(".cm-line");
 }
 
-/** Scroll each ancestor that actually scrolls so the caret stays inside it. */
 export function keepCaretInView(start: Element, caret: Rect, xMargin: number, yMargin: number, side: number): boolean {
   let box = caret;
   let owned = false;
