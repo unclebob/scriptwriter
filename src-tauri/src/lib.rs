@@ -307,9 +307,9 @@ fn parent_dir(path: &Path) -> io::Result<&Path> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"))
 }
 
-struct Written {
-    renamed: bool,
-    result: io::Result<()>,
+enum Written {
+    Renamed,
+    Unchanged(io::Error),
 }
 
 fn commit_write<F, S>(path: &Path, bytes: &[u8], before_commit: F, sync_parent: S) -> io::Result<()>
@@ -338,28 +338,30 @@ where
     F: FnOnce(&Path) -> io::Result<()>,
     S: FnOnce(&Path) -> io::Result<()>,
 {
-    let mut renamed = false;
-    let result = (|| {
+    match (|| {
         let mut file = OpenOptions::new().write(true).create_new(true).open(temp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         before_commit(temp)?;
         fs::rename(temp, path)?;
-        renamed = true;
-        sync_parent(parent)?;
         Ok(())
-    })();
-    Written { renamed, result }
+    })() {
+        Ok(()) => {
+            let _ = sync_parent(parent);
+            Written::Renamed
+        }
+        Err(error) => Written::Unchanged(error),
+    }
 }
 
 fn finish_write(temp: &Path, written: Written) -> io::Result<()> {
-    if written.renamed {
-        // The new bytes are already the destination file. Failing the command
-        // here would leave the session dirty after the previous file is gone.
-        return Ok(());
+    match written {
+        Written::Renamed => Ok(()),
+        Written::Unchanged(error) => {
+            let _ = fs::remove_file(temp);
+            Err(error)
+        }
     }
-    let _ = fs::remove_file(temp);
-    written.result
 }
 
 fn temporary_path(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
