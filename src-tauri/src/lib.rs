@@ -721,8 +721,12 @@ fn same_companion(roots: &ScriptRoots, session: &str) -> bool {
 }
 
 fn start_unless_live(root: &Path, session: &str) -> Result<(), String> {
-    if session_live(session) {
-        return publish_terminal(root, session);
+    resume_or_launch(root, session, session_live(session))
+}
+
+fn resume_or_launch(root: &Path, session: &str, live: bool) -> Result<(), String> {
+    if live {
+        return Ok(());
     }
     launch_session(root, session)
 }
@@ -1405,6 +1409,13 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(absent_refresh(io::Error::other("nope")).is_err());
+    }
+
+    #[test]
+    fn live_session_does_not_open_another_terminal() {
+        let dir = temp_dir();
+        assert!(resume_or_launch(&dir, "scriptwriter-live", true).is_ok());
+        assert!(read_companion(&dir).is_none());
     }
 
     #[test]
