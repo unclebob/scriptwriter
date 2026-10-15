@@ -787,7 +787,7 @@ fn resume_or_launch(root: &Path, session: &str, live: bool) -> Result<(), String
 
 fn session_live(session: &str) -> bool {
     matches!(
-        tmux_status(&tmux_args(&["has-session", "-t", session])),
+        tmux_quiet(&tmux_args(&["has-session", "-t", session])),
         Ok(0)
     )
 }
@@ -809,7 +809,7 @@ fn started_session(root: &Path, session: &str, code: i32) -> Result<(), String> 
 
 fn arm_respawn(session: &str) {
     let pane = format!("{session}:0.0");
-    let _ = tmux_status(&tmux_args(&[
+    let _ = tmux_quiet(&tmux_args(&[
         "set-option",
         "-p",
         "-t",
@@ -817,14 +817,14 @@ fn arm_respawn(session: &str) {
         "remain-on-exit",
         "on",
     ]));
-    let _ = tmux_status(&tmux_args(&[
+    let _ = tmux_quiet(&tmux_args(&[
         "set-hook",
         "-t",
         session,
         "pane-died",
         "respawn-pane -k",
     ]));
-    let _ = tmux_status(&tmux_args(&["set-option", "-t", session, "status", "off"]));
+    let _ = tmux_quiet(&tmux_args(&["set-option", "-t", session, "status", "off"]));
 }
 
 fn publish_terminal(root: &Path, session: &str) -> Result<(), String> {
@@ -890,8 +890,8 @@ fn stop_record(record: Option<CompanionProc>) {
 }
 
 fn stop_name(session: &str) {
-    let _ = tmux_status(&tmux_args(&["set-hook", "-t", session, "-u", "pane-died"]));
-    let _ = tmux_status(&tmux_args(&["kill-session", "-t", session]));
+    let _ = tmux_quiet(&tmux_args(&["set-hook", "-t", session, "-u", "pane-died"]));
+    let _ = tmux_quiet(&tmux_args(&["kill-session", "-t", session]));
 }
 
 fn close_window(window: Option<&str>) {
@@ -901,6 +901,7 @@ fn close_window(window: Option<&str>) {
     let _ = command_status(
         "osascript",
         &["-e".to_string(), close_terminal_script(digits)],
+        false,
     );
 }
 
@@ -995,7 +996,11 @@ fn tmux_args(parts: &[&str]) -> Vec<String> {
 }
 
 fn tmux_status(args: &[String]) -> Result<i32, String> {
-    command_status(&tmux_executable(), args).map_err(missing_tmux)
+    command_status(&tmux_executable(), args, false).map_err(missing_tmux)
+}
+
+fn tmux_quiet(args: &[String]) -> Result<i32, String> {
+    command_status(&tmux_executable(), args, true).map_err(missing_tmux)
 }
 
 fn missing_tmux(error: String) -> String {
@@ -1199,11 +1204,13 @@ fn present_line(line: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-fn command_status(program: &str, args: &[String]) -> Result<i32, String> {
-    let status = std::process::Command::new(program)
-        .args(args)
-        .status()
-        .map_err(|error| error.to_string())?;
+fn command_status(program: &str, args: &[String], quiet: bool) -> Result<i32, String> {
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    if quiet {
+        command.stderr(std::process::Stdio::null());
+    }
+    let status = command.status().map_err(|error| error.to_string())?;
     Ok(status.code().unwrap_or(1))
 }
 
