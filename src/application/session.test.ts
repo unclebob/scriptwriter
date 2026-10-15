@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { elementsDocument, normalizeElements } from "../domain/document";
-import type { OpenedScript, ScriptRepository } from "./repository";
+import type { ExternalScript, OpenedScript, SaveResult, ScriptRepository } from "./repository";
 import { ScriptSession } from "./session";
 
 class FakeRepository implements ScriptRepository {
@@ -25,9 +25,18 @@ class FakeRepository implements ScriptRepository {
     this.commits += 1;
   }
 
-  async saveScript(text: string): Promise<void> {
+  saveResult: SaveResult = "saved";
+
+  async saveScript(text: string): Promise<SaveResult> {
     this.saved.push(text);
     if (this.saveHook) await this.saveHook();
+    return this.saveResult;
+  }
+
+  overwritten: string[] = [];
+
+  async overwriteScript(text: string): Promise<void> {
+    this.overwritten.push(text);
   }
 
   exported: { name: string; extension: "pdf" | "csv"; bytes: Uint8Array }[] = [];
@@ -37,18 +46,28 @@ class FakeRepository implements ScriptRepository {
     return true;
   }
 
-  external: { changed: boolean; text: string | null } = { changed: false, text: null };
-  acknowledged: (string | null)[] = [];
+  external: ExternalScript = { text: null, diskChanged: false, token: null, tokenChanged: false };
+  ackedText: (string | null)[] = [];
+  ackedToken: (string | null)[] = [];
   companions = 0;
 
-  async readExternal(): Promise<{ changed: boolean; text: string | null }> {
+  async readExternal(): Promise<ExternalScript> {
     return this.external;
   }
 
-  async acknowledgeExternal(text: string | null): Promise<void> {
-    this.acknowledged.push(text);
-    this.external = { changed: false, text };
+  async acknowledgeText(text: string | null): Promise<void> {
+    this.ackedText.push(text);
+    this.external = { ...this.external, text, diskChanged: false };
   }
+
+  async acknowledgeToken(token: string | null): Promise<void> {
+    this.ackedToken.push(token);
+    this.external = { ...this.external, token, tokenChanged: false };
+  }
+
+  async writePlace(): Promise<void> {}
+
+  async clearPlace(): Promise<void> {}
 
   async ensureCompanion(): Promise<void> {
     this.companions += 1;
@@ -323,41 +342,77 @@ describe("script session", () => {
     const repository = new FakeRepository();
     const session = new ScriptSession(repository, 60_000);
     await session.start();
-    repository.external = {
-      changed: true,
-      text: JSON.stringify({ title: "Remote", elements: [{ type: "dialogue", text: "Hello." }] }),
-    };
-    expect(await session.pullExternal()).toBe(true);
+    const remote = JSON.stringify({ title: "Remote", elements: [{ type: "dialogue", text: "Hello." }] });
+    repository.external = { text: remote, diskChanged: true, token: "1", tokenChanged: true };
+    expect(await session.pullExternal()).toBe("reloaded");
     expect(session.state.script?.title).toBe("Remote");
     expect(session.state.document?.text).toContain("Hello.");
     expect(session.needsSave()).toBe(false);
-    expect(repository.acknowledged).toEqual([repository.external.text]);
-    expect(await session.pullExternal()).toBe(false);
+    expect(repository.ackedText).toEqual([remote]);
+    expect(repository.ackedToken).toEqual(["1"]);
+    expect(await session.pullExternal()).toBe("unchanged");
   });
 
-  it("leaves a dirty script in place when the companion writes", async () => {
+  it("keeps a dirty script and does not treat the companion file as saved", async () => {
     const repository = new FakeRepository();
     const session = new ScriptSession(repository, 60_000);
     await session.start();
     session.setHeader("title", "Mine");
-    repository.external = {
-      changed: true,
-      text: JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "No." }] }),
-    };
-    expect(await session.pullExternal()).toBe(false);
+    const remote = JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "No." }] });
+    repository.external = { text: remote, diskChanged: true, token: "1", tokenChanged: true };
+    expect(await session.pullExternal()).toBe("conflict");
     expect(session.state.script?.title).toBe("Mine");
-    expect(repository.acknowledged).toEqual([]);
+    expect(session.state.conflict).toBe(true);
+    expect(repository.ackedText).toEqual([]);
+    expect(repository.ackedToken).toEqual(["1"]);
+    repository.saveResult = "conflict";
+    await session.flush();
+    expect(session.needsSave()).toBe(true);
+    expect(session.state.savedRevision).toBe(0);
+    expect(repository.saved).toHaveLength(1);
+    expect(await session.prepareToClose()).toBe(false);
+    await session.keepMine();
+    expect(session.needsSave()).toBe(false);
+    expect(session.state.conflict).toBe(false);
+    expect(JSON.parse(repository.overwritten[0]).title).toBe("Mine");
+  });
+
+  it("replaces the editor with the companion file when the writer takes it", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    session.setHeader("title", "Mine");
+    const remote = JSON.stringify({ title: "Remote", elements: [{ type: "action", text: "Go." }] });
+    repository.external = { text: remote, diskChanged: true, token: "1", tokenChanged: true };
+    expect(await session.pullExternal()).toBe("conflict");
+    expect(await session.takeTheirs()).toBe("reloaded");
+    expect(session.state.script?.title).toBe("Remote");
+    expect(session.needsSave()).toBe(false);
+    expect(repository.overwritten).toEqual([]);
+  });
+
+  it("reloads a clean script when the file changes and no token is written", async () => {
+    const repository = new FakeRepository();
+    const session = new ScriptSession(repository, 60_000);
+    await session.start();
+    const remote = JSON.stringify({ title: "Remote", elements: [] });
+    repository.external = { text: remote, diskChanged: true, token: null, tokenChanged: false };
+    expect(await session.pullExternal()).toBe("reloaded");
+    expect(session.state.script?.title).toBe("Remote");
   });
 
   it("keeps the open script when the companion writes invalid JSON", async () => {
     const repository = new FakeRepository();
     const session = new ScriptSession(repository, 60_000);
     await session.start();
-    repository.external = { changed: true, text: "{" };
-    expect(await session.pullExternal()).toBe(false);
+    repository.external = { text: "{", diskChanged: true, token: "bad", tokenChanged: true };
+    expect(await session.pullExternal()).toBe("invalid");
     expect(session.state.script?.title).toBe("One");
     expect(session.state.error).toContain("not JSON");
-    expect(repository.acknowledged).toEqual(["{"]);
+    expect(repository.ackedText).toEqual(["{"]);
+    expect(repository.ackedToken).toEqual(["bad"]);
+    expect(await session.pullExternal()).toBe("unchanged");
+    expect(session.state.error).toContain("not JSON");
   });
 
   it("starts at revision zero and counts a document edit as unsaved", async () => {

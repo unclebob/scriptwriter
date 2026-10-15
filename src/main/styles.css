@@ -260,10 +260,15 @@ aside h2 {
 
 .status {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.25rem 0.7rem;
   border-top: 1px solid #ccc;
   background: #eee;
   font-size: 0.85rem;
+}
+
+#conflict-status {
+  color: #6b3a1f;
 }

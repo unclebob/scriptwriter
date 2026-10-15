@@ -1,6 +1,6 @@
 import { elementsDocument, storableElements, type DocumentSnapshot } from "../domain/document";
 import { openScript, serializeScript, storedScript, type OpenScript } from "../domain/script";
-import type { ExternalScript, ScriptRepository } from "./repository";
+import type { ExternalScript, PullResult, ScriptRepository } from "./repository";
 import { derive } from "../projections/derived";
 import { scenesCsv } from "../projections/scenes";
 
@@ -13,6 +13,7 @@ export type SessionState = {
   revision: number;
   savedRevision: number;
   error: string | null;
+  conflict: boolean;
 };
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -26,6 +27,7 @@ export class ScriptSession {
     revision: 0,
     savedRevision: 0,
     error: null,
+    conflict: false,
   };
   private timer: Timer | null = null;
   private saving: Promise<void> | null = null;
@@ -101,7 +103,7 @@ export class ScriptSession {
   }
 
   needsSave(): boolean {
-    return this.stateValue.revision !== this.stateValue.savedRevision || this.saving !== null;
+    return this.unsaved() || this.saving !== null || this.stateValue.conflict;
   }
 
   async flush(): Promise<void> {
@@ -117,9 +119,10 @@ export class ScriptSession {
   }
 
   async prepareToClose(): Promise<boolean> {
+    if (this.stateValue.conflict) return false;
     try {
       await this.flush();
-      return true;
+      return !this.stateValue.conflict && !this.needsSave();
     } catch {
       return false;
     }
@@ -144,10 +147,44 @@ export class ScriptSession {
     );
   }
 
-  async pullExternal(): Promise<boolean> {
-    const incoming = await this.incomingExternal();
-    if (!incoming) return false;
-    return this.takeExternal(incoming.text);
+  async pullExternal(): Promise<PullResult> {
+    if (this.holdInput || !this.stateValue.script) return "unchanged";
+    const incoming = await this.repository.readExternal();
+    if (!incoming.diskChanged) {
+      if (incoming.tokenChanged) await this.repository.acknowledgeToken(incoming.token);
+      if (this.stateValue.conflict) this.setState({ conflict: false });
+      return "unchanged";
+    }
+    if (this.unsaved() || this.stateValue.conflict) {
+      await this.repository.acknowledgeToken(incoming.token);
+      this.setState({ conflict: true, status: "ready" });
+      return "conflict";
+    }
+    return this.takeDisk(incoming);
+  }
+
+  async keepMine(): Promise<void> {
+    const current = this.current();
+    await this.repository.overwriteScript(this.serialized(current.script, current.document));
+    this.setState({
+      savedRevision: this.stateValue.revision,
+      conflict: false,
+      status: "ready",
+      error: null,
+    });
+  }
+
+  async takeTheirs(): Promise<PullResult> {
+    if (!this.openRoot()) return "unchanged";
+    return this.takeDisk(await this.repository.readExternal());
+  }
+
+  writePlace(json: string): Promise<void> {
+    return this.repository.writePlace(json);
+  }
+
+  clearPlace(): Promise<void> {
+    return this.repository.clearPlace();
   }
 
   ensureCompanion(): Promise<void> {
@@ -163,28 +200,19 @@ export class ScriptSession {
     await this.repository.exportFile(`${fileStem(current.script.title)}-shooting-schedule.pdf`, "pdf", bytes);
   }
 
-  private skipExternal(): boolean {
-    if (this.needsSave()) return true;
-    return this.holdInput;
+  private unsaved(): boolean {
+    return this.stateValue.revision !== this.stateValue.savedRevision || this.saving !== null;
   }
 
-  private async incomingExternal(): Promise<ExternalScript | null> {
-    if (this.skipExternal()) return null;
-    return this.changedExternal();
-  }
-
-  private async changedExternal(): Promise<ExternalScript | null> {
-    const incoming = await this.repository.readExternal();
-    if (!incoming.changed) return null;
-    return incoming;
-  }
-
-  private async takeExternal(text: string | null): Promise<boolean> {
+  private async takeDisk(incoming: ExternalScript): Promise<PullResult> {
     const root = this.openRoot();
-    if (!root) return false;
-    const applied = this.loadText(root, text);
-    await this.repository.acknowledgeExternal(text);
-    return applied;
+    if (!root) return "unchanged";
+    const applied = this.loadText(root, incoming.text);
+    await this.repository.acknowledgeText(incoming.text);
+    await this.repository.acknowledgeToken(incoming.token);
+    if (!applied) return "invalid";
+    this.setState({ conflict: false });
+    return "reloaded";
   }
 
   private openRoot(): string | null {
@@ -214,6 +242,7 @@ export class ScriptSession {
       revision,
       savedRevision,
       error: null,
+      conflict: false,
     };
     this.emit();
   }
@@ -225,17 +254,23 @@ export class ScriptSession {
         const revision = this.stateValue.revision;
         const { script, document } = this.current();
         this.setState({ status: "saving" });
-        await this.repository.saveScript(
-          serializeScript({ ...script, elements: storableElements(document) }),
-        );
+        const outcome = await this.repository.saveScript(this.serialized(script, document));
         if (this.generation !== generation) return;
-        this.setState({ savedRevision: revision, status: "ready", error: null });
+        if (outcome === "conflict") {
+          this.setState({ status: "ready", conflict: true, error: null });
+          return;
+        }
+        this.setState({ savedRevision: revision, status: "ready", error: null, conflict: false });
       }
     } catch (error) {
       if (this.generation !== generation) return;
       this.fail(error);
       throw error;
     }
+  }
+
+  private serialized(script: OpenScript, document: DocumentSnapshot): string {
+    return serializeScript({ ...script, elements: storableElements(document) });
   }
 
   private current(): { script: OpenScript; document: DocumentSnapshot } {
