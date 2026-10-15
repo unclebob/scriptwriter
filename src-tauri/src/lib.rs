@@ -18,7 +18,6 @@ struct ScriptRoots {
     seen: Option<String>,
     saw_file: bool,
     refresh_seen: Option<String>,
-    refresh_armed: Option<String>,
     companion: Option<CompanionProc>,
 }
 
@@ -116,13 +115,60 @@ fn promote(slot: &ActiveScript) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveOutcome {
+    result: String,
+}
+
 #[tauri::command]
-fn save_active_script(state: State<'_, ActiveScript>, text: String) -> Result<(), String> {
+fn save_active_script(state: State<'_, ActiveScript>, text: String) -> Result<SaveOutcome, String> {
     save_active(&state, text)
 }
 
-fn save_active(slot: &ActiveScript, text: String) -> Result<(), String> {
-    save_script(&active_root_of(slot)?, &text)?;
+fn save_active(slot: &ActiveScript, text: String) -> Result<SaveOutcome, String> {
+    let root = active_root_of(slot)?;
+    let disk = read_script(&root)?;
+    let seen = seen_text(slot)?;
+    if disk.as_deref() == Some(text.as_str()) {
+        note_seen(slot, Some(text))?;
+        return Ok(outcome("saved"));
+    }
+    if may_replace(&disk, &seen) {
+        save_script(&root, &text)?;
+        note_seen(slot, Some(text))?;
+        return Ok(outcome("saved"));
+    }
+    Ok(outcome("conflict"))
+}
+
+fn may_replace(disk: &Option<String>, seen: &Option<String>) -> bool {
+    disk == seen || (seen.is_none() && disk.is_none())
+}
+
+fn outcome(result: &str) -> SaveOutcome {
+    SaveOutcome {
+        result: result.to_string(),
+    }
+}
+
+fn seen_text(slot: &ActiveScript) -> Result<Option<String>, String> {
+    Ok(slot
+        .0
+        .lock()
+        .map_err(|_| "Script state is unavailable.".to_string())?
+        .seen
+        .clone())
+}
+
+#[tauri::command]
+fn overwrite_active_script(state: State<'_, ActiveScript>, text: String) -> Result<(), String> {
+    overwrite_active(&state, text)
+}
+
+fn overwrite_active(slot: &ActiveScript, text: String) -> Result<(), String> {
+    let root = active_root_of(slot)?;
+    save_script(&root, &text)?;
     note_seen(slot, Some(text))
 }
 
@@ -452,9 +498,13 @@ fn launch_app() {
             choose_script,
             commit_script,
             save_active_script,
+            overwrite_active_script,
             export_file,
             read_external_script,
-            acknowledge_script,
+            acknowledge_text,
+            acknowledge_token,
+            write_place,
+            clear_place,
             ensure_companion,
             stop_companion
         ])
@@ -476,8 +526,10 @@ fn stop_on_exit(state: &ActiveScript) {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExternalScript {
-    changed: bool,
     text: Option<String>,
+    disk_changed: bool,
+    token: Option<String>,
+    token_changed: bool,
 }
 
 #[tauri::command]
@@ -488,49 +540,25 @@ fn read_external_script(state: State<'_, ActiveScript>) -> Result<ExternalScript
 fn external_script(slot: &ActiveScript) -> Result<ExternalScript, String> {
     let root = active_root_of(slot)?;
     let text = read_script(&root)?;
-    if seen_match(slot, &text)? {
-        return asked_refresh(slot, &root, text);
-    }
-    changed_script(slot, &root, text)
+    let token = read_refresh(&root)?;
+    report_external(slot, text, token)
 }
 
-fn asked_refresh(
+fn report_external(
     slot: &ActiveScript,
-    root: &Path,
     text: Option<String>,
+    token: Option<String>,
 ) -> Result<ExternalScript, String> {
-    refresh_or_quiet(pending_refresh(slot, root)?, slot, root, text)
-}
-
-fn refresh_or_quiet(
-    pending: bool,
-    slot: &ActiveScript,
-    root: &Path,
-    text: Option<String>,
-) -> Result<ExternalScript, String> {
-    if !pending {
-        return Ok(unchanged_script());
-    }
-    changed_script(slot, root, text)
-}
-
-fn unchanged_script() -> ExternalScript {
-    ExternalScript {
-        changed: false,
-        text: None,
-    }
-}
-
-fn pending_refresh(slot: &ActiveScript, root: &Path) -> Result<bool, String> {
-    new_refresh(slot, read_refresh(root)?)
-}
-
-fn new_refresh(slot: &ActiveScript, token: Option<String>) -> Result<bool, String> {
     let roots = slot
         .0
         .lock()
         .map_err(|_| "Script state is unavailable.".to_string())?;
-    Ok(token_is_new(&roots, token.as_deref()))
+    Ok(ExternalScript {
+        disk_changed: roots.saw_file && roots.seen != text,
+        token_changed: token_is_new(&roots, token.as_deref()),
+        text,
+        token,
+    })
 }
 
 fn token_is_new(roots: &ScriptRoots, token: Option<&str>) -> bool {
@@ -539,32 +567,6 @@ fn token_is_new(roots: &ScriptRoots, token: Option<&str>) -> bool {
 
 fn fresh_token(token: Option<&str>) -> Option<&str> {
     token.filter(|text| !text.is_empty())
-}
-
-fn changed_script(
-    slot: &ActiveScript,
-    root: &Path,
-    text: Option<String>,
-) -> Result<ExternalScript, String> {
-    arm_refresh(slot, root)?;
-    Ok(ExternalScript {
-        changed: true,
-        text,
-    })
-}
-
-fn arm_refresh(slot: &ActiveScript, root: &Path) -> Result<(), String> {
-    let token = read_refresh(root)?;
-    store_armed(slot, token)
-}
-
-fn store_armed(slot: &ActiveScript, token: Option<String>) -> Result<(), String> {
-    let mut roots = slot
-        .0
-        .lock()
-        .map_err(|_| "Script state is unavailable.".to_string())?;
-    roots.refresh_armed = token;
-    Ok(())
 }
 
 fn read_refresh(root: &Path) -> Result<Option<String>, String> {
@@ -611,19 +613,8 @@ fn store_seen_refresh(slot: &ActiveScript, token: Option<String>) -> Result<(), 
     Ok(())
 }
 
-fn seen_match(slot: &ActiveScript, text: &Option<String>) -> Result<bool, String> {
-    let roots = slot
-        .0
-        .lock()
-        .map_err(|_| "Script state is unavailable.".to_string())?;
-    if !roots.saw_file {
-        return Ok(false);
-    }
-    Ok(roots.seen == *text)
-}
-
 #[tauri::command]
-fn acknowledge_script(state: State<'_, ActiveScript>, text: Option<String>) -> Result<(), String> {
+fn acknowledge_text(state: State<'_, ActiveScript>, text: Option<String>) -> Result<(), String> {
     note_seen(&state, text)
 }
 
@@ -634,13 +625,46 @@ fn note_seen(slot: &ActiveScript, text: Option<String>) -> Result<(), String> {
         .map_err(|_| "Script state is unavailable.".to_string())?;
     roots.saw_file = true;
     roots.seen = text;
-    take_armed(&mut roots);
     Ok(())
 }
 
-fn take_armed(roots: &mut ScriptRoots) {
-    if let Some(token) = roots.refresh_armed.take() {
-        roots.refresh_seen = Some(token);
+#[tauri::command]
+fn acknowledge_token(state: State<'_, ActiveScript>, token: Option<String>) -> Result<(), String> {
+    note_token(&state, token)
+}
+
+fn note_token(slot: &ActiveScript, token: Option<String>) -> Result<(), String> {
+    let Some(value) = token.filter(|text| !text.is_empty()) else {
+        return Ok(());
+    };
+    store_seen_refresh(slot, Some(value))
+}
+
+#[tauri::command]
+fn write_place(state: State<'_, ActiveScript>, json: String) -> Result<(), String> {
+    write_place_file(&state, &json)
+}
+
+#[tauri::command]
+fn clear_place(state: State<'_, ActiveScript>) -> Result<(), String> {
+    let Ok(root) = active_root_of(&state) else {
+        return Ok(());
+    };
+    remove_place(&root.join(".scriptwriter").join("place.json"))
+}
+
+fn write_place_file(slot: &ActiveScript, json: &str) -> Result<(), String> {
+    let root = active_root_of(slot)?;
+    let path = root.join(".scriptwriter").join("place.json");
+    reject_symlink(&path)?;
+    atomic_write(&path, json.as_bytes()).map_err(|error| error.to_string())
+}
+
+fn remove_place(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -656,17 +680,47 @@ Element types are scene, action, character, parenthetical, dialogue,\n\
 transition, shot, and act. Text never chooses a type. A scene heading is one\n\
 opaque line. Do not split it into a prefix, a location, and a time of day.\n\
 Write character, scene, shot, act, and transition text in the case the writer\n\
-sees. Edit script.json to change the script. To put that file on screen, write\n\
-a new one-line token to .scriptwriter/refresh. Use a different token each time.\n\
-Scriptwriter reads script.json and refreshes the display when the writer has\n\
-nothing unsaved.\n\
+sees.\n\
+The writer is looking at one place in .scriptwriter/place.json. You only read\n\
+that file. You never write it. The app replaces it when the writer moves.\n\
+You will see the previous place or the next one, never a half-written file.\n\
+\n\
+The place is JSON. file is always script.json. focus is screenplay or title.\n\
+A screenplay caret is {\"kind\":\"caret\",\"at\":{\"kind\":\"text\",\"index\":N,\"offset\":N}}\n\
+or {\"kind\":\"caret\",\"at\":{\"kind\":\"gap\",\"before\":N}}. A range has kind range,\n\
+anchor, and head, and those ends differ. index is the zero-based index in\n\
+elements. offset counts Unicode code points in that element's unescaped text.\n\
+It is not a byte offset in script.json and not a position in the on-screen\n\
+screenplay. A gap is the blank between elements. before is the index of the\n\
+element that follows, or the length of elements to sit after the last. The\n\
+empty opening scene is that gap with before 0. A title focus names field\n\
+title, credit, author, draft, or contact, and the caret counts code points\n\
+in that field's value.\n\
+\n\
+Apply a text point by editing elements[index].text at that code point. Apply\n\
+a gap by inserting an element at that index. Apply a range by editing the\n\
+spanned element texts, from anchor to head. Read place.json again before a\n\
+later edit. If the file is missing, no screenplay is open.\n\
+\n\
+Edit script.json to change the script. Write the file completely, then write\n\
+a new one-line token to .scriptwriter/refresh. Use a different token each\n\
+time. The same token twice does not ask again. If you stop halfway, the app\n\
+may refresh once on whatever is already on disk. Finish the file and write\n\
+a new token.\n\
+\n\
+If the writer is mid-edit in that same file, the app keeps their keystrokes\n\
+on screen and keeps your bytes on disk. It will not save their buffer over\n\
+your write, and it will not throw their keystrokes away. You cannot see that\n\
+buffer. Do not try to merge it. A file they are not editing is reloaded.\n\
+\n\
 Do not start Scriptwriter. Closing its window stops only this companion.\n\
 Do not commit or push unless asked.\n";
 
 const LAUNCH_PROMPT: &str = "\
 The screenplay in this directory is open in Scriptwriter. When asked, edit \
 script.json, then write a new one-line token to .scriptwriter/refresh so the \
-window reads that file and refreshes the display. Wait for directives.";
+window reads that file and refreshes the display. Read .scriptwriter/place.json \
+before editing and apply that place inside script.json. Wait for directives.";
 
 fn standing_rules() -> &'static str {
     STANDING_RULES
@@ -1364,20 +1418,50 @@ mod tests {
         let dir = temp_dir().canonicalize().unwrap();
         let slot = ActiveScript::default();
         open_remembered(&slot, dir.clone()).unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        let quiet = external_script(&slot).unwrap();
+        assert!(!quiet.disk_changed);
+        assert!(!quiet.token_changed);
         fs::write(dir.join(SCRIPT_FILE), "from the agent").unwrap();
         let changed = external_script(&slot).unwrap();
-        assert!(changed.changed);
+        assert!(changed.disk_changed);
         assert_eq!(changed.text.as_deref(), Some("from the agent"));
         note_seen(&slot, changed.text).unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        assert!(!external_script(&slot).unwrap().disk_changed);
         save_active(&slot, "typed".into()).unwrap();
         assert_eq!(fs::read_to_string(dir.join(SCRIPT_FILE)).unwrap(), "typed");
-        assert!(!external_script(&slot).unwrap().changed);
+        assert!(!external_script(&slot).unwrap().disk_changed);
         fs::remove_file(dir.join(SCRIPT_FILE)).unwrap();
         let removed = external_script(&slot).unwrap();
-        assert!(removed.changed);
+        assert!(removed.disk_changed);
         assert!(removed.text.is_none());
+    }
+
+    #[test]
+    fn leaves_a_companion_script_in_place() {
+        let dir = temp_dir().canonicalize().unwrap();
+        let slot = ActiveScript::default();
+        fs::write(dir.join(SCRIPT_FILE), "base").unwrap();
+        open_remembered(&slot, dir.clone()).unwrap();
+        fs::write(dir.join(SCRIPT_FILE), "remote").unwrap();
+        let outcome = save_active(&slot, "typed-edit".into()).unwrap();
+        assert_eq!(outcome.result, "conflict");
+        assert_eq!(fs::read_to_string(dir.join(SCRIPT_FILE)).unwrap(), "remote");
+        overwrite_active(&slot, "typed-edit".into()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join(SCRIPT_FILE)).unwrap(),
+            "typed-edit"
+        );
+        let place = dir.join(".scriptwriter").join("place.json");
+        write_place_file(&slot, "{\"file\":\"script.json\"}").unwrap();
+        assert_eq!(
+            fs::read_to_string(&place).unwrap(),
+            "{\"file\":\"script.json\"}"
+        );
+        write_place_file(&slot, "{\"focus\":\"title\"}").unwrap();
+        assert_eq!(fs::read_to_string(&place).unwrap(), "{\"focus\":\"title\"}");
+        remove_place(&place).unwrap();
+        assert!(!place.exists());
+        remove_place(&place).unwrap();
     }
 
     #[test]
@@ -1388,20 +1472,21 @@ mod tests {
         fs::write(dir.join(SCRIPT_FILE), "on disk").unwrap();
         fs::write(dir.join(".scriptwriter").join("refresh"), "old\n").unwrap();
         open_remembered(&slot, dir.clone()).unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        assert!(!external_script(&slot).unwrap().token_changed);
         fs::write(dir.join(".scriptwriter").join("refresh"), " \n").unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        assert!(!external_script(&slot).unwrap().token_changed);
         fs::write(dir.join(".scriptwriter").join("refresh"), "1\n").unwrap();
         let asked = external_script(&slot).unwrap();
-        assert!(asked.changed);
+        assert!(asked.token_changed);
+        assert!(!asked.disk_changed);
         assert_eq!(asked.text.as_deref(), Some("on disk"));
-        note_seen(&slot, asked.text).unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        note_token(&slot, asked.token).unwrap();
+        assert!(!external_script(&slot).unwrap().token_changed);
         fs::write(dir.join(".scriptwriter").join("refresh"), "1\n").unwrap();
-        assert!(!external_script(&slot).unwrap().changed);
+        assert!(!external_script(&slot).unwrap().token_changed);
         fs::write(dir.join(SCRIPT_FILE), "rewritten").unwrap();
         let rewritten = external_script(&slot).unwrap();
-        assert!(rewritten.changed);
+        assert!(rewritten.disk_changed);
         assert_eq!(rewritten.text.as_deref(), Some("rewritten"));
         assert_eq!(first_token("  2 \nnext".into()).as_deref(), Some("2"));
         assert!(first_token("\n".into()).is_none());
