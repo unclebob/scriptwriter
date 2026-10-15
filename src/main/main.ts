@@ -2,7 +2,9 @@ import "./styles.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScriptSession } from "../application/session";
 import { elementAt, type DocumentSnapshot } from "../domain/document";
+import { createPlaceWriter, mapEditorSelection, screenplayPlace, titlePlace, type TitleField } from "../domain/place";
 import type { OpenScript } from "../domain/script";
+import type { PullResult } from "../application/repository";
 import { ELEMENT_LABEL, ELEMENTS } from "../domain/elements";
 import { TauriScriptRepository } from "../infrastructure/tauriRepository";
 import type { OutlineRow } from "../projections/scenes";
@@ -26,12 +28,19 @@ const warnings = document.querySelector<HTMLElement>("#warnings")!;
 const scenesEl = document.querySelector<HTMLElement>("#scenes")!;
 const elementName = document.querySelector<HTMLElement>("#element-name")!;
 const pageName = document.querySelector<HTMLElement>("#page-name")!;
+const conflictStatus = document.querySelector<HTMLElement>("#conflict-status")!;
+const keepMine = document.querySelector<HTMLButtonElement>("#keep-mine")!;
+const takeTheirs = document.querySelector<HTMLButtonElement>("#take-theirs")!;
 const host = document.querySelector<HTMLElement>("#editor-host")!;
 const pageEl = document.querySelector<HTMLElement>(".page")!;
 const marginLabel = document.querySelector<HTMLElement>("#margin-label")!;
 const stage = document.querySelector<HTMLElement>("#stage")!;
 
 const session = new ScriptSession(new TauriScriptRepository());
+const places = createPlaceWriter(
+  (json) => session.writePlace(json),
+  () => session.clearPlace(),
+);
 let sceneKey = "";
 let closing = false;
 let companionWarning = "";
@@ -45,14 +54,24 @@ const editor: ScriptEditor = createEditor(host, [], {
   },
   onCursor(document, cursor) {
     paint(document, cursor);
+    publishPlace();
   },
 });
 editor.setEditable(false);
 setFieldsEnabled(false);
 
 session.subscribe((state) => {
+  paintConflict(state.conflict);
+  if (!state.script) places.submit(null);
   if (state.error) showWarning(state.error);
-  else if (state.status === "ready" && state.revision === state.savedRevision) clearWarnings();
+  else if (state.status === "ready" && state.revision === state.savedRevision && !state.conflict) clearWarnings();
+});
+
+keepMine.addEventListener("click", () => {
+  void session.keepMine();
+});
+takeTheirs.addEventListener("click", () => {
+  void session.takeTheirs().then(showIfExternal);
 });
 
 for (const name of ["file", "edit"] as const) {
@@ -131,12 +150,19 @@ titleInput.addEventListener("input", () => {
   session.setHeader("title", titleInput.value);
 });
 for (const [field, input] of [
+  ["title", titleInput],
   ["credit", creditInput],
   ["author", authorInput],
   ["draft", draftInput],
   ["contact", contactInput],
 ] as const) {
-  input.addEventListener("input", () => session.setHeader(field, input.value));
+  if (field !== "title") input.addEventListener("input", () => session.setHeader(field, input.value));
+  const publish = () => publishTitle(field, input);
+  input.addEventListener("input", publish);
+  input.addEventListener("focus", publish);
+  input.addEventListener("keyup", publish);
+  input.addEventListener("click", publish);
+  input.addEventListener("select", publish);
 }
 
 window.addEventListener("keydown", (event) => {
@@ -170,6 +196,8 @@ void getCurrentWindow().onCloseRequested(async (event) => {
       closing = false;
       showWarning(message(error));
     }
+  } else if (session.state.conflict) {
+    showWarning("The companion changed this file.");
   } else if (session.state.error) {
     showWarning(session.state.error);
   }
@@ -406,22 +434,21 @@ function warnCompanion(error: unknown) {
   showWarning(text);
 }
 
-function showIfExternal(changed: boolean) {
+function showIfExternal(result: PullResult) {
   companionWarning = "";
-  if (!changed) return;
+  if (result !== "reloaded") return;
   showExternal();
 }
 
 function showExternal() {
+  const before = editor.getDocument();
+  const selection = editor.view.state.selection.main;
   const place = screenPlace();
   const loaded = loadedScript();
   if (!loaded) return;
-  showHeld(loaded, place);
-}
-
-function showHeld(loaded: { script: OpenScript; document: DocumentSnapshot }, place: ScreenPlace) {
   applyLoaded(loaded.script, loaded.document);
-  editor.goto(place.head);
+  const mapped = mapEditorSelection(before, editor.getDocument(), selection.anchor, selection.head);
+  editor.select(mapped.anchor, mapped.head);
   restoreScroll(place);
   window.requestAnimationFrame(() => restoreScroll(place));
 }
@@ -487,6 +514,30 @@ async function exportFile(exporter: () => Promise<void>) {
   } catch (error) {
     showWarning(message(error));
   }
+}
+
+function publishPlace() {
+  if (!session.state.script || focusedTitle()) return;
+  const selection = editor.view.state.selection.main;
+  places.submit(screenplayPlace(editor.getDocument(), selection.anchor, selection.head));
+}
+
+function publishTitle(field: TitleField, input: HTMLInputElement | HTMLTextAreaElement) {
+  if (document.activeElement !== input || !session.state.script) return;
+  const anchor = input.selectionStart ?? 0;
+  const head = input.selectionEnd ?? anchor;
+  places.submit(titlePlace(field, input.value, anchor, head));
+}
+
+function focusedTitle(): boolean {
+  return fields.some((field) => field === document.activeElement);
+}
+
+function paintConflict(conflict: boolean) {
+  conflictStatus.hidden = !conflict;
+  keepMine.hidden = !conflict;
+  takeTheirs.hidden = !conflict;
+  conflictStatus.textContent = conflict ? "The companion changed this file." : "";
 }
 
 function paint(document: DocumentSnapshot, cursor: number) {

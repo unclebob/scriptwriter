@@ -57,6 +57,7 @@ export type ScriptEditor = {
   focus: () => void;
   setEditable: (editable: boolean) => void;
   goto: (pos: number) => void;
+  select: (anchor: number, head: number) => void;
   insertBefore: (pos: number) => void;
 };
 
@@ -84,6 +85,14 @@ export function createEditor(
     goto(pos) {
       const clipped = Math.max(0, Math.min(pos, view.state.doc.length));
       view.dispatch({ selection: EditorSelection.cursor(clipped), scrollIntoView: true });
+      view.focus();
+    },
+    select(anchor, head) {
+      const length = view.state.doc.length;
+      const from = Math.max(0, Math.min(anchor, length));
+      const to = Math.max(0, Math.min(head, length));
+      const selection = from === to ? EditorSelection.cursor(from) : EditorSelection.range(from, to);
+      view.dispatch({ selection, scrollIntoView: true });
       view.focus();
     },
     insertBefore(pos) {

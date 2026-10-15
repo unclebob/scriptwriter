@@ -169,6 +169,10 @@ bridge.invoke.mockImplementation(async (command: string, args?: { text?: string;
   if (command === "save_active_script") {
     if (saveError) throw saveError;
     saves.push(args?.text ?? "");
+    return { result: "saved" };
+  }
+  if (command === "overwrite_active_script") {
+    saves.push(args?.text ?? "");
     return undefined;
   }
   if (command === "export_file") {
@@ -176,11 +180,19 @@ bridge.invoke.mockImplementation(async (command: string, args?: { text?: string;
     exportsSeen.push({ suggestedName: args?.suggestedName ?? "", extension: args?.extension ?? "" });
     return true;
   }
-  if (command === "read_external_script") return { changed: externalText !== null, text: externalText };
-  if (command === "acknowledge_script") {
+  if (command === "read_external_script") {
+    return {
+      text: externalText,
+      diskChanged: externalText !== null,
+      token: externalText === null ? null : "1",
+      tokenChanged: externalText !== null,
+    };
+  }
+  if (command === "acknowledge_text") {
     externalText = null;
     return undefined;
   }
+  if (command === "acknowledge_token" || command === "write_place" || command === "clear_place") return undefined;
   if (command === "ensure_companion" || command === "stop_companion") return undefined;
   throw new Error(`unexpected command ${command}`);
 });
@@ -226,6 +238,9 @@ document.body.innerHTML = `
     </div>
     <footer class="status">
       <span id="element-name"></span>
+      <span id="conflict-status" hidden></span>
+      <button id="keep-mine" type="button" hidden>Keep mine</button>
+      <button id="take-theirs" type="button" hidden>Take theirs</button>
       <span id="page-name"></span>
     </footer>
   </div>
@@ -459,7 +474,8 @@ describe("screen shell", () => {
       expect(externalText).toBeNull();
       expect(scroll.top).toBe(180);
       expect(scroll.left).toBe(12);
-      expect(cursor()).toBe(5);
+      expect(cursor()).toBe(0);
+      expect(view.state.doc.sliceString(cursor(), cursor() + 1)).toBe("F");
     } finally {
       view.setState = setState;
       scroll.release();
